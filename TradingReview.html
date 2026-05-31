@@ -556,10 +556,13 @@ function saveSettingsAndReload() {
 
 // ── Supabase Init & Load ──────────────────────────────────────
 function initSupabase() {
-    const { sbUrl, sbKey } = getSettings();
+    let { sbUrl, sbKey } = getSettings();
     if (!sbUrl || !sbKey) return false;
+    // 자동 정리
+    sbUrl = sbUrl.trim().replace(/\/+$/, '');
+    if (!sbUrl.startsWith('http')) sbUrl = 'https://' + sbUrl;
     try {
-        sb = supabase.createClient(sbUrl, sbKey);
+        sb = supabase.createClient(sbUrl, sbKey.trim());
         return true;
     } catch(e) {
         console.error('Supabase init error:', e);
