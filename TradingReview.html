@@ -854,7 +854,7 @@ function getDayStats(y,mo,dy) {
         if(!pos.closeTime) continue;
         const p=parseIso(pos.closeTime);
         if(p.y!==y||p.mo!==mo||p.dy!==dy) continue;
-        pnl+=pos.profit; syms[pos.symbolName]=(syms[pos.symbolName]||0)+1;
+        pnl+=netPnl(pos); syms[pos.symbolName]=(syms[pos.symbolName]||0)+1;
     }
     return {pnl, syms, total:Object.values(syms).reduce((s,v)=>s+v,0)};
 }
