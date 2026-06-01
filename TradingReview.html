@@ -654,7 +654,7 @@ async function reconcileMobileBalance() {
     // Rebuild balance entries for all mobile trades in chronological order
     let bal = baseBalance;
     const mobileEntries = mobilePosns.map(p => {
-        bal += p.profit;
+        bal += p.profit + (p.commission||0) + (p.swap||0);
         return { time: p.closeTime, balance: bal };
     });
 
@@ -834,7 +834,6 @@ async function fetchKRW() {
             renderOverview(); renderList(); renderCalendar(); return;
         }
     }
-    try { localStorage.setItem('tr_krw_cache', JSON.stringify({rate:KRW_RATE, ts:Date.now()})); } catch(e){}
     updateRateBadge(); renderOverview(); renderList(); renderCalendar();
 }
 function krw(usd) {
@@ -961,13 +960,14 @@ function toggleDeposits() {
 }
 
 // ── Position List ─────────────────────────────────────────────
+function netPnl(pos) { return pos.profit + (pos.commission||0); }
 function getGroupedPosIds() { return new Set(groupCache.flatMap(g=>g.posIds)); }
 function getDisplayItems() {
     const grouped=getGroupedPosIds(), items=[];
-    for(const pos of POSITIONS) { if(!grouped.has(pos.id)) items.push({type:'pos',data:pos}); }
+    for(const pos of POSITIONS) { if(!grouped.has(pos.id)) items.push({type:'pos',data:{...pos,profit:netPnl(pos)}}); }
     for(const g of groupCache) {
         const ps=getGroupPositions(g); if(!ps.length) continue;
-        const pnl=ps.reduce((s,p)=>s+p.profit,0);
+        const pnl=ps.reduce((s,p)=>s+netPnl(p),0);
         items.push({type:'group',data:{id:g.id, positions:ps,
             openTime:ps[0].openTime, closeTime:ps[ps.length-1].closeTime,
             symbolName:ps[0].symbolName, profit:pnl, count:ps.length,
@@ -1134,7 +1134,7 @@ async function openDetail(id, isGroup) {
     if(isGroup) {
         const g=groupCache.find(g=>g.id===id); if(!g) return;
         const ps=getGroupPositions(g);
-        const totalPnl=ps.reduce((s,p)=>s+p.profit,0);
+        const totalPnl=ps.reduce((s,p)=>s+netPnl(p),0);
         const totalComm=ps.reduce((s,p)=>s+p.commission,0);
         headerHtml='<div class="detail-title-block">'+
             '<span class="detail-time">'+formatKorean(ps[0].openTime)+' ~ '+formatKorean(ps[ps.length-1].closeTime)+'</span>'+
@@ -1147,11 +1147,12 @@ async function openDetail(id, isGroup) {
             '</div>'+
             '<div class="group-pos-list">'+
             ps.map(p=>'<div class="group-pos-item"><span>'+formatKorean(p.openTime)+' '+(p.direction==='buy'?'Buy':'Sell')+' '+p.volume+'랏</span>'+
-            '<span class="'+(p.profit>=0?'positive':'negative')+'">'+fmtProfit(p.profit)+'</span></div>').join('')+
+            '<span class="'+(netPnl(p)>=0?'positive':'negative')+'">'+fmtProfit(netPnl(p))+'</span></div>').join('')+
             '</div>';
     } else {
         const pos=POSITIONS.find(p=>p.id===id); if(!pos) return;
-        const profCls=pos.profit>=0?'positive':'negative';
+        const pnl=netPnl(pos);
+        const profCls=pnl>=0?'positive':'negative';
         headerHtml='<div class="detail-title-block">'+
             '<span class="detail-time">'+formatKorean(pos.openTime)+'</span>'+
             '<span class="detail-symbol">'+pos.symbolName+'</span>'+
@@ -1163,7 +1164,7 @@ async function openDetail(id, isGroup) {
             '<span>청산가: <strong>$'+pos.closePrice+'</strong></span>'+
             (pos.sl?'<span>S/L: <strong>$'+pos.sl+'</strong></span>':'')+
             (pos.tp?'<span>T/P: <strong>$'+pos.tp+'</strong></span>':'')+
-            '<span class="pnl-stat '+profCls+'">손익: '+fmtProfit(pos.profit)+(KRW_RATE?' <span class="hope-krw">('+krw(Math.abs(pos.profit))+')</span>':'')+' </span>'+
+            '<span class="pnl-stat '+profCls+'">손익: '+fmtProfit(pnl)+(KRW_RATE?' <span class="hope-krw">('+krw(Math.abs(pnl))+')</span>':'')+' </span>'+
             '<span style="color:#718096">수수료: '+pos.commission.toFixed(2)+'</span>'+
             '</div>';
     }
@@ -1430,7 +1431,7 @@ async function confirmTrade() {
         sl:null, tp:null, commission:newRow.commission, swap:newRow.swap,
         profit:newRow.profit, source:'mobile'
     });
-    CURRENT_BALANCE += profit;
+    CURRENT_BALANCE += profit + commission + swap;
     BALANCE_HISTORY.push({ time: closeTime, balance: CURRENT_BALANCE });
     BALANCE_HISTORY.sort((a,b)=>(a.time||'').localeCompare(b.time||''));
     if(sb) {
@@ -1524,8 +1525,6 @@ async function init() {
         document.getElementById('loading-overlay').style.display='none';
         return;
     }
-
-    loadCachedKRW();
 
     try {
         await loadAll();
