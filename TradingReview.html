@@ -960,7 +960,7 @@ function toggleDeposits() {
 }
 
 // ── Position List ─────────────────────────────────────────────
-function netPnl(pos) { return pos.profit + (pos.commission||0); }
+function netPnl(pos) { return (pos.profit||0) + (pos.commission||0); }
 function getGroupedPosIds() { return new Set(groupCache.flatMap(g=>g.posIds)); }
 function getDisplayItems() {
     const grouped=getGroupedPosIds(), items=[];
@@ -1532,7 +1532,7 @@ async function init() {
         return;
     }
 
-    await reconcileMobileBalance();
+    try { await reconcileMobileBalance(); } catch(e) { console.warn('reconcile:', e); }
 
     renderOverview();
     initCalendar();
