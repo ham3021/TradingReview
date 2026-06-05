@@ -17,6 +17,14 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 .rate-badge .dot{width:7px;height:7px;border-radius:50%;background:#5dba90}
 .rate-badge.loading .dot{background:#b0bec5}
 .rate-badge.error .dot{background:#e07575}
+.rate-refresh-btn{background:none;border:none;cursor:pointer;color:#4a7ec5;font-size:15px;padding:0 2px;line-height:1;opacity:.6;transition:opacity .15s}
+.rate-refresh-btn:hover{opacity:1}
+.rate-edit-btn{background:none;border:none;cursor:pointer;color:#8eaaca;font-size:11px;padding:0 2px;line-height:1;opacity:.7;transition:opacity .15s}
+.rate-edit-btn:hover{color:#4a7ec5;opacity:1}
+.rate-input-wrap{display:none;align-items:center;gap:4px}
+.rate-input-wrap.open{display:flex}
+.rate-input{width:60px;border:1px solid #c8daf5;border-radius:6px;padding:2px 6px;font-size:12px;color:#1e3050;text-align:right}
+.rate-input-ok{background:#4a7ec5;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer}
 .card{background:#fff;border:1px solid #d8e6f8;border-radius:16px;padding:22px;margin-bottom:16px;box-shadow:0 2px 12px rgba(80,130,210,.07)}
 .overview-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap}
 .overview-header-btns{display:flex;gap:8px;flex-wrap:wrap}
@@ -258,6 +266,12 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
     <div class="rate-badge loading" id="rate-badge">
       <span class="dot"></span>
       <span id="rate-text">환율 불러오는 중...</span>
+      <button class="rate-refresh-btn" onclick="fetchKRW()" title="API 새로고침">↻</button>
+      <button class="rate-edit-btn" onclick="toggleRateInput()" title="직접 입력">✎</button>
+      <span class="rate-input-wrap" id="rate-input-wrap">
+        <input class="rate-input" id="rate-input" type="number" placeholder="1535" onkeydown="if(event.key==='Enter')applyManualRate()">
+        <button class="rate-input-ok" onclick="applyManualRate()">확인</button>
+      </span>
     </div>
     <button class="btn-secondary btn-sm" onclick="openSettings()" title="설정">⚙️</button>
   </header>
@@ -266,6 +280,7 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
     <div class="overview-header">
       <h2>Trading Overview</h2>
       <div class="overview-header-btns">
+        <button class="btn-secondary" onclick="openUploadModal()">📱 거래내역 업로드</button>
         <button class="btn-secondary" onclick="openHope()">🚀 희망회로</button>
         <button class="btn-secondary" onclick="openWeekly()">📅 주별 성과</button>
       </div>
@@ -308,7 +323,6 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
           <option value="newest">최신순</option>
           <option value="oldest">오래된순</option>
         </select>
-        <button class="btn-secondary btn-sm" onclick="openUploadModal()">📱 거래내역 업로드</button>
         <button class="btn-secondary btn-sm" id="select-mode-btn" onclick="toggleSelectMode()">☑ 선택 모드</button>
       </div>
     </div>
@@ -519,7 +533,7 @@ const ALL_TAGS = ['원비','더블비','캔들','이평선','지지저항','매�
 let KRW_RATE = null;
 let filterResult = 'all', filterSymbol = 'all', currentSort = 'newest';
 let currentNoteId = null, currentIsGroup = false, selectedTags = [];
-let selectMode = false, selectedSet = new Set(), selectedGroupSet = new Set();
+let selectMode = false, selectedSet = new Set();
 let calYear, calMonth, activeDayFilter = null;
 let hopeScenario = 'target';
 let pendingTradeData = null;
@@ -630,47 +644,6 @@ async function loadAll() {
         throw e;
     } finally {
         showLoading(false);
-    }
-}
-
-// ── Balance Reconciliation ────────────────────────────────────
-async function reconcileMobileBalance() {
-    const mobilePosns = POSITIONS
-        .filter(p => p.source === 'mobile')
-        .sort((a,b) => (a.closeTime||'').localeCompare(b.closeTime||''));
-    if (!mobilePosns.length) return;
-
-    // Find the last "clean" balance from Excel data (before first mobile trade)
-    const firstMobileTime = mobilePosns[0].closeTime || '';
-    let baseBalance = INITIAL_BALANCE;
-    for (const e of BALANCE_HISTORY) {
-        if ((e.time||'') < firstMobileTime) baseBalance = e.balance;
-    }
-
-    // Remove any previously added mobile entries (idempotent)
-    const mobileTimes = new Set(mobilePosns.map(p => p.closeTime).filter(Boolean));
-    const cleanHistory = BALANCE_HISTORY.filter(e => !mobileTimes.has(e.time));
-
-    // Rebuild balance entries for all mobile trades in chronological order
-    let bal = baseBalance;
-    const mobileEntries = mobilePosns.map(p => {
-        bal += p.profit + (p.commission||0) + (p.swap||0);
-        return { time: p.closeTime, balance: bal };
-    });
-
-    const newHistory = [...cleanHistory, ...mobileEntries]
-        .sort((a,b) => (a.time||'').localeCompare(b.time||''));
-
-    // Only save if something changed
-    if (Math.abs(bal - CURRENT_BALANCE) < 0.001 && newHistory.length === BALANCE_HISTORY.length) return;
-
-    BALANCE_HISTORY = newHistory;
-    CURRENT_BALANCE = bal;
-    if (sb) {
-        await sb.from('app_settings').upsert([
-            { key:'current_balance', value:CURRENT_BALANCE },
-            { key:'balance_history', value:BALANCE_HISTORY }
-        ], { onConflict:'key' });
     }
 }
 
@@ -803,38 +776,62 @@ function showToast(msg) {
 }
 
 // ── Exchange Rate ─────────────────────────────────────────────
+const KRW_CACHE_TTL = 5 * 60 * 1000; // 5분
 function loadCachedKRW() {
     try {
         const cached = JSON.parse(localStorage.getItem('tr_krw_cache')||'null');
-        if (cached && (Date.now() - cached.ts) < 3600000) { KRW_RATE = cached.rate; updateRateBadge(); return true; }
+        if (cached && (Date.now() - cached.ts) < KRW_CACHE_TTL) { KRW_RATE = cached.rate; updateRateBadge(cached.ts, cached.manual); return true; }
     } catch(e) {}
     return false;
 }
-function updateRateBadge() {
+function updateRateBadge(ts, manual) {
     const badge=document.getElementById('rate-badge'), txt=document.getElementById('rate-text');
     if(!KRW_RATE) return;
     badge.classList.remove('loading','error');
-    txt.textContent = '$1 ≈ '+Math.round(KRW_RATE).toLocaleString()+'원';
+    const t = ts ? new Date(ts) : new Date();
+    const hm = t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+    txt.textContent = '$1 ≈ '+Math.round(KRW_RATE).toLocaleString()+'원'+(manual?' (직접입력)':' ('+hm+')');
+}
+function toggleRateInput() {
+    const wrap=document.getElementById('rate-input-wrap');
+    const inp=document.getElementById('rate-input');
+    const isOpen=wrap.classList.toggle('open');
+    if(isOpen){ inp.value=KRW_RATE?Math.round(KRW_RATE):''; inp.focus(); inp.select(); }
+}
+function applyManualRate() {
+    const val=parseFloat(document.getElementById('rate-input').value);
+    if(!val||val<100||val>10000) return;
+    KRW_RATE=val;
+    const now=Date.now();
+    try { localStorage.setItem('tr_krw_cache', JSON.stringify({rate:KRW_RATE, ts:now, manual:true})); } catch(e){}
+    document.getElementById('rate-input-wrap').classList.remove('open');
+    updateRateBadge(now, true); renderOverview(); renderList(); renderCalendar();
 }
 async function fetchKRW() {
     const badge=document.getElementById('rate-badge'), txt=document.getElementById('rate-text');
     try {
-        const r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
-        const d=await r.json();
-        if(!d?.usd?.krw) throw new Error('no rate');
-        KRW_RATE=d.usd.krw;
+        // 1순위: Dunamu(업비트) - 한국 실시간 환율
+        const r=await fetch('https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD');
+        const d=await r.json(); KRW_RATE=d[0].basePrice;
     } catch(e) {
         try {
-            const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-            const d=await r.json();
-            if(!d?.rates?.KRW) throw new Error('no rate');
-            KRW_RATE=d.rates.KRW;
+            // 2순위: fawazahmed0 CDN
+            const r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+            const d=await r.json(); KRW_RATE=d.usd.krw;
         } catch(e2) {
-            if(!KRW_RATE){ KRW_RATE=1380; badge.classList.add('error'); txt.textContent='환율 오류 (기본값: 1,380원)'; }
-            renderOverview(); renderList(); renderCalendar(); return;
+            try {
+                // 3순위: exchangerate-api
+                const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+                const d=await r.json(); KRW_RATE=d.rates.KRW;
+            } catch(e3) {
+                if(!KRW_RATE){ KRW_RATE=1380; badge.classList.add('error'); txt.textContent='환율 오류 (기본값: 1,380원)'; }
+                renderOverview(); renderList(); renderCalendar(); return;
+            }
         }
     }
-    updateRateBadge(); renderOverview(); renderList(); renderCalendar();
+    const now = Date.now();
+    try { localStorage.setItem('tr_krw_cache', JSON.stringify({rate:KRW_RATE, ts:now})); } catch(e){}
+    updateRateBadge(now); renderOverview(); renderList(); renderCalendar();
 }
 function krw(usd) {
     if(!KRW_RATE||usd===null||usd===undefined) return '';
@@ -854,7 +851,7 @@ function getDayStats(y,mo,dy) {
         if(!pos.closeTime) continue;
         const p=parseIso(pos.closeTime);
         if(p.y!==y||p.mo!==mo||p.dy!==dy) continue;
-        pnl+=netPnl(pos); syms[pos.symbolName]=(syms[pos.symbolName]||0)+1;
+        pnl+=pos.profit; syms[pos.symbolName]=(syms[pos.symbolName]||0)+1;
     }
     return {pnl, syms, total:Object.values(syms).reduce((s,v)=>s+v,0)};
 }
@@ -906,16 +903,24 @@ function getLastBalanceBefore(timeStr) {
 function calcWeekly() {
     const keys=new Set();
     for(const p of POSITIONS) if(p.closeTime) keys.add(getWeekKey(p.closeTime));
-    return Array.from(keys).sort().map(key => {
-        const nextKey=addDaysToKey(key,7);
-        const startBal=getLastBalanceBefore(key+'T00:00:00');
-        const endBal=getLastBalanceBefore(nextKey+'T00:00:00');
+    const sortedKeys=Array.from(keys).sort();
+
+    // P&L per week = sum of (profit + commission + swap) for positions closed that week
+    const weekData=sortedKeys.map(key => {
         const weekPos=POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
+        const pnl=weekPos.reduce((s,p)=>s+p.profit+p.commission+p.swap, 0);
         const wins=weekPos.filter(p=>p.profit>0).length;
-        const pnl=endBal-startBal;
-        return {key, startBalance:startBal, endBalance:endBal, pnl,
-                target:startBal*WEEKLY_TARGET_PCT, met:pnl>=startBal*WEEKLY_TARGET_PCT,
-                count:weekPos.length, wins};
+        return {key, pnl, count:weekPos.length, wins};
+    });
+
+    // Build forward from INITIAL_BALANCE so week-1 start always equals initial capital
+    let bal=INITIAL_BALANCE;
+    return weekData.map(w => {
+        const startBal=bal;
+        bal=+(bal+w.pnl).toFixed(2);
+        return {key:w.key, startBalance:startBal, endBalance:bal, pnl:w.pnl,
+                target:startBal*WEEKLY_TARGET_PCT, met:w.pnl>=startBal*WEEKLY_TARGET_PCT,
+                count:w.count, wins:w.wins};
     });
 }
 
@@ -960,14 +965,13 @@ function toggleDeposits() {
 }
 
 // ── Position List ─────────────────────────────────────────────
-function netPnl(pos) { return (pos.profit||0) + (pos.commission||0); }
 function getGroupedPosIds() { return new Set(groupCache.flatMap(g=>g.posIds)); }
 function getDisplayItems() {
     const grouped=getGroupedPosIds(), items=[];
-    for(const pos of POSITIONS) { if(!grouped.has(pos.id)) items.push({type:'pos',data:{...pos,profit:netPnl(pos)}}); }
+    for(const pos of POSITIONS) { if(!grouped.has(pos.id)) items.push({type:'pos',data:pos}); }
     for(const g of groupCache) {
         const ps=getGroupPositions(g); if(!ps.length) continue;
-        const pnl=ps.reduce((s,p)=>s+netPnl(p),0);
+        const pnl=ps.reduce((s,p)=>s+p.profit,0);
         items.push({type:'group',data:{id:g.id, positions:ps,
             openTime:ps[0].openTime, closeTime:ps[ps.length-1].closeTime,
             symbolName:ps[0].symbolName, profit:pnl, count:ps.length,
@@ -1043,14 +1047,12 @@ function renderPosItem(pos) {
 function renderGroupItem(g) {
     const note=getNote(g.id);
     const isWin=g.profit>0, isLoss=g.profit<0;
-    const isSel=selectedGroupSet.has(g.id);
-    const cls='position-item '+(isWin?'success-pos':isLoss?'fail-pos':'neutral-pos')+(selectMode&&isSel?' selected':'');
+    const cls='position-item '+(isWin?'success-pos':isLoss?'fail-pos':'neutral-pos');
     const statusCls=isWin?'success':isLoss?'fail':'neutral';
     const tagsHtml=(note.tags||[]).map(t=>'<span class="tag-badge">'+t+'</span>').join('');
     const kp=note.keyPoints?(note.keyPoints.substring(0,60)+(note.keyPoints.length>60?'…':'')):'';
-    const checkCls='pos-check'+(isSel?' checked':'');
-    return '<div class="'+cls+'" onclick="'+(selectMode?'toggleGroupSelect(event,\''+g.id+'\')':'openDetail(\''+g.id+'\',true)')+'">'+
-        '<div class="'+checkCls+'" onclick="toggleGroupSelect(event,\''+g.id+'\')">'+(isSel?'✓':'')+'</div>'+
+    return '<div class="'+cls+'" onclick="openDetail(\''+g.id+'\',true)">'+
+        '<div class="pos-check"></div>'+
         '<div class="pos-content">'+
         '<div class="pos-main-row">'+
         '<div class="pos-title">'+
@@ -1082,7 +1084,7 @@ function setSort(v) { currentSort=v; renderList(); }
 
 // ── Select Mode ───────────────────────────────────────────────
 function toggleSelectMode() {
-    selectMode=!selectMode; selectedSet.clear(); selectedGroupSet.clear();
+    selectMode=!selectMode; selectedSet.clear();
     const btn=document.getElementById('select-mode-btn');
     const bar=document.getElementById('select-bar');
     const list=document.getElementById('position-list');
@@ -1091,16 +1093,10 @@ function toggleSelectMode() {
     list.classList.toggle('select-mode',selectMode);
     renderList();
 }
-function toggleGroupSelect(e,gId) {
-    e.stopPropagation();
-    if(selectedGroupSet.has(gId)) selectedGroupSet.delete(gId); else selectedGroupSet.add(gId);
-    document.getElementById('select-info').textContent=(selectedSet.size+selectedGroupSet.size)+'개 선택됨';
-    renderList();
-}
 function toggleSelect(e,posId) {
     e.stopPropagation();
     if(selectedSet.has(posId)) selectedSet.delete(posId); else selectedSet.add(posId);
-    document.getElementById('select-info').textContent=(selectedSet.size+selectedGroupSet.size)+'개 선택됨';
+    document.getElementById('select-info').textContent=selectedSet.size+'개 선택됨';
     renderList();
 }
 function onPosClick(e,posId) {
@@ -1108,16 +1104,12 @@ function onPosClick(e,posId) {
     openDetail(posId,false);
 }
 async function mergeSelected() {
-    const allPosIds=new Set(selectedSet);
-    for(const gId of selectedGroupSet) {
-        const g=groupCache.find(g=>g.id===gId);
-        if(g) g.posIds.forEach(id=>allPosIds.add(id));
-    }
-    if(allPosIds.size<2){ showToast('2개 이상 선택하세요'); return; }
-    for(const gId of selectedGroupSet) await deleteGroup(gId);
-    await createGroup(Array.from(allPosIds));
-    showToast(allPosIds.size+'개 포지션을 하나로 합쳤습니다');
-    selectedSet.clear(); selectedGroupSet.clear(); selectMode=false;
+    if(selectedSet.size<2){ showToast('2개 이상 선택하세요'); return; }
+    const grouped=getGroupedPosIds();
+    for(const id of selectedSet) if(grouped.has(id)){ showToast('이미 그룹에 속한 포지션이 있습니다'); return; }
+    await createGroup(Array.from(selectedSet));
+    showToast(selectedSet.size+'개 포지션을 하나로 합쳤습니다');
+    selectedSet.clear(); selectMode=false;
     document.getElementById('select-mode-btn').textContent='☑ 선택 모드';
     document.getElementById('select-bar').classList.remove('visible');
     renderList();
@@ -1134,7 +1126,7 @@ async function openDetail(id, isGroup) {
     if(isGroup) {
         const g=groupCache.find(g=>g.id===id); if(!g) return;
         const ps=getGroupPositions(g);
-        const totalPnl=ps.reduce((s,p)=>s+netPnl(p),0);
+        const totalPnl=ps.reduce((s,p)=>s+p.profit,0);
         const totalComm=ps.reduce((s,p)=>s+p.commission,0);
         headerHtml='<div class="detail-title-block">'+
             '<span class="detail-time">'+formatKorean(ps[0].openTime)+' ~ '+formatKorean(ps[ps.length-1].closeTime)+'</span>'+
@@ -1147,12 +1139,11 @@ async function openDetail(id, isGroup) {
             '</div>'+
             '<div class="group-pos-list">'+
             ps.map(p=>'<div class="group-pos-item"><span>'+formatKorean(p.openTime)+' '+(p.direction==='buy'?'Buy':'Sell')+' '+p.volume+'랏</span>'+
-            '<span class="'+(netPnl(p)>=0?'positive':'negative')+'">'+fmtProfit(netPnl(p))+'</span></div>').join('')+
+            '<span class="'+(p.profit>=0?'positive':'negative')+'">'+fmtProfit(p.profit)+'</span></div>').join('')+
             '</div>';
     } else {
         const pos=POSITIONS.find(p=>p.id===id); if(!pos) return;
-        const pnl=netPnl(pos);
-        const profCls=pnl>=0?'positive':'negative';
+        const profCls=pos.profit>=0?'positive':'negative';
         headerHtml='<div class="detail-title-block">'+
             '<span class="detail-time">'+formatKorean(pos.openTime)+'</span>'+
             '<span class="detail-symbol">'+pos.symbolName+'</span>'+
@@ -1164,7 +1155,7 @@ async function openDetail(id, isGroup) {
             '<span>청산가: <strong>$'+pos.closePrice+'</strong></span>'+
             (pos.sl?'<span>S/L: <strong>$'+pos.sl+'</strong></span>':'')+
             (pos.tp?'<span>T/P: <strong>$'+pos.tp+'</strong></span>':'')+
-            '<span class="pnl-stat '+profCls+'">손익: '+fmtProfit(pnl)+(KRW_RATE?' <span class="hope-krw">('+krw(Math.abs(pnl))+')</span>':'')+' </span>'+
+            '<span class="pnl-stat '+profCls+'">손익: '+fmtProfit(pos.profit)+(KRW_RATE?' <span class="hope-krw">('+krw(Math.abs(pos.profit))+')</span>':'')+' </span>'+
             '<span style="color:#718096">수수료: '+pos.commission.toFixed(2)+'</span>'+
             '</div>';
     }
@@ -1431,15 +1422,6 @@ async function confirmTrade() {
         sl:null, tp:null, commission:newRow.commission, swap:newRow.swap,
         profit:newRow.profit, source:'mobile'
     });
-    CURRENT_BALANCE += profit + commission + swap;
-    BALANCE_HISTORY.push({ time: closeTime, balance: CURRENT_BALANCE });
-    BALANCE_HISTORY.sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-    if(sb) {
-        await sb.from('app_settings').upsert([
-            { key:'current_balance', value:CURRENT_BALANCE },
-            { key:'balance_history', value:BALANCE_HISTORY }
-        ], { onConflict:'key' });
-    }
     showToast('거래 저장 완료!');
     closeUploadModal();
     renderList(); renderCalendar(); renderOverview();
@@ -1526,13 +1508,13 @@ async function init() {
         return;
     }
 
+    loadCachedKRW();
+
     try {
         await loadAll();
     } catch(e) {
         return;
     }
-
-    try { await reconcileMobileBalance(); } catch(e) { console.warn('reconcile:', e); }
 
     renderOverview();
     initCalendar();
