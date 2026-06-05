@@ -518,6 +518,7 @@ let BALANCE_HISTORY = [];
 let DEPOSITS = [];
 let INITIAL_BALANCE = 0;
 let CURRENT_BALANCE = 0;
+let PERIOD_START_BALANCE = 0;
 let START_DATE = '';
 
 // ── In-Memory Cache ───────────────────────────────────────────
@@ -632,9 +633,10 @@ async function loadAll() {
         for (const s of (setRes.data || [])) sm[s.key] = s.value;
         BALANCE_HISTORY = sm['balance_history'] || [];
         DEPOSITS        = sm['deposits']        || [];
-        INITIAL_BALANCE = sm['initial_balance'] != null ? Number(sm['initial_balance']) : 1019.53;
-        CURRENT_BALANCE = sm['current_balance'] != null ? Number(sm['current_balance']) : 2016.01;
-        START_DATE      = sm['start_date']      || '2026-05-04T23:37:03';
+        INITIAL_BALANCE       = sm['initial_balance']      != null ? Number(sm['initial_balance'])      : 1019.53;
+        CURRENT_BALANCE       = sm['current_balance']      != null ? Number(sm['current_balance'])      : 2016.01;
+        PERIOD_START_BALANCE  = sm['period_start_balance'] != null ? Number(sm['period_start_balance'])  : CURRENT_BALANCE;
+        START_DATE            = sm['start_date']           || '2026-05-04T23:37:03';
 
     } catch(e) {
         showLoading(false);
@@ -895,32 +897,32 @@ function setDayFilter(dateStr) {
 function clearDayFilter() { setDayFilter(null); }
 
 // ── Weekly Calculation ────────────────────────────────────────
-function getLastBalanceBefore(timeStr) {
-    let bal=INITIAL_BALANCE;
-    for(const e of BALANCE_HISTORY) { if(e.time&&e.time<timeStr) bal=e.balance; }
-    return bal;
+function getBalanceAt(timeStr) {
+    // BALANCE_HISTORY의 마지막 잔고 (timeStr 이전)
+    // 없으면 PERIOD_START_BALANCE (이 Excel 기간 시작 잔고) 사용
+    let bal = null;
+    for(const e of BALANCE_HISTORY) {
+        if(e.time && e.time < timeStr) bal = e.balance;
+    }
+    if(bal !== null) return bal;
+    // history 이전이면: 기간 시작잔고 사용 (2016.01 같은 값)
+    return PERIOD_START_BALANCE || INITIAL_BALANCE;
 }
 function calcWeekly() {
     const keys=new Set();
     for(const p of POSITIONS) if(p.closeTime) keys.add(getWeekKey(p.closeTime));
     const sortedKeys=Array.from(keys).sort();
 
-    // P&L per week = sum of (profit + commission + swap) for positions closed that week
-    const weekData=sortedKeys.map(key => {
-        const weekPos=POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
-        const pnl=weekPos.reduce((s,p)=>s+p.profit+p.commission+p.swap, 0);
-        const wins=weekPos.filter(p=>p.profit>0).length;
-        return {key, pnl, count:weekPos.length, wins};
-    });
-
-    // Build forward from INITIAL_BALANCE so week-1 start always equals initial capital
-    let bal=INITIAL_BALANCE;
-    return weekData.map(w => {
-        const startBal=bal;
-        bal=+(bal+w.pnl).toFixed(2);
-        return {key:w.key, startBalance:startBal, endBalance:bal, pnl:w.pnl,
-                target:startBal*WEEKLY_TARGET_PCT, met:w.pnl>=startBal*WEEKLY_TARGET_PCT,
-                count:w.count, wins:w.wins};
+    return sortedKeys.map(key => {
+        const nextKey=addDaysToKey(key,7);
+        const startBal=getBalanceAt(key+'T00:00:00');
+        const endBal  =getBalanceAt(nextKey+'T00:00:00');
+        const weekPos =POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
+        const pnl     =+(endBal-startBal).toFixed(2);
+        const wins    =weekPos.filter(p=>p.profit>0).length;
+        return {key, startBalance:startBal, endBalance:endBal, pnl,
+                target:startBal*WEEKLY_TARGET_PCT, met:pnl>=startBal*WEEKLY_TARGET_PCT,
+                count:weekPos.length, wins};
     });
 }
 
