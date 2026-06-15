@@ -551,8 +551,8 @@ let pendingTradeData = null;
 // ── Settings ──────────────────────────────────────────────────
 function getSettings() {
     return {
-        sbUrl: localStorage.getItem('sb_url') || '',
-        sbKey: localStorage.getItem('sb_key') || '',
+        sbUrl: localStorage.getItem('sb_url') || 'https://nbuxplbsmxsfauhrklye.supabase.co',
+        sbKey: localStorage.getItem('sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5idXhwbGJzbXhzZmF1aHJrbHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzM2OTAsImV4cCI6MjA5NTgwOTY5MH0.hlN-XeI3_9uh6hTwPOzwkvXkoh30msq8951GDDxSSMI',
         anthropicKey: localStorage.getItem('anthropic_key') || ''
     };
 }
