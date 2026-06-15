@@ -163,7 +163,7 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 .weekly-summary{display:flex;gap:16px;padding:16px 20px;border-top:1px solid #e4eef8;font-size:13px;color:#7a96b8;flex-wrap:wrap;background:#f8fbff}
 .weekly-summary strong{color:#1e3050}
 /* Hope Circuit modal */
-.hope-modal-content{max-width:700px}
+.hope-modal-content{max-width:820px}
 .hope-body{padding:20px;overflow-y:auto}
 .hope-meta{font-size:13px;color:#5a7a9a;background:#f0f6ff;border:1px solid #c8daf5;border-radius:10px;padding:12px 16px;margin-bottom:16px;line-height:1.9}
 .hope-meta strong{color:#1e3050}
@@ -179,6 +179,15 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 .hope-bar-fill{height:100%;background:linear-gradient(90deg,#7ab5f0,#5dba90);border-radius:4px;transition:width .5s}
 .hope-disclaimer{font-size:12px;color:#8eaaca;text-align:center;margin-top:16px;padding-top:16px;border-top:1px solid #e4eef8}
 .hope-krw{font-size:11px;color:#5b8edc;font-weight:500}
+/* Lot size & withdrawal guideline */
+.lot-section{margin-top:14px;padding:13px 18px;background:#f0f6ff;border:1px solid #c8daf5;border-radius:12px}
+.lot-section-title{font-size:11px;font-weight:700;color:#5b8edc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.lot-grid{display:flex;gap:28px;flex-wrap:wrap;align-items:center}
+.lot-item{display:flex;flex-direction:column;align-items:center;gap:3px}
+.lot-label{font-size:11px;color:#7a96b8;font-weight:600;text-align:center}
+.lot-value{font-size:22px;font-weight:800;color:#1e3050}
+.lot-unit{font-size:11px;color:#8eaaca}
+.withdraw-guide-sub{font-size:11px;color:#c0a030;font-weight:500}
 /* Buttons */
 .btn-primary{background:linear-gradient(135deg,#5b8edc,#4a7ec8);color:#fff;border:none;border-radius:9px;padding:8px 18px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;box-shadow:0 2px 6px rgba(91,142,220,.3)}
 .btn-primary:hover{background:linear-gradient(135deg,#4a7ec8,#3a6db5);box-shadow:0 4px 12px rgba(91,142,220,.4)}
@@ -467,7 +476,7 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 <!-- Hope Circuit Modal -->
 <div id="hope-modal" class="modal-overlay" style="display:none">
   <div class="modal-content hope-modal-content">
-    <div class="modal-header"><h2>🚀 희망회로 - 복리 수익 예상</h2><button class="btn-close" onclick="closeHope()">✕</button></div>
+    <div class="modal-header"><h2>🚀 희망회로 - 주 4% 목표 + 50% 출금 시 자산 성장</h2><button class="btn-close" onclick="closeHope()">✕</button></div>
     <div class="hope-body">
       <div class="hope-meta" id="hope-meta"></div>
       <div class="hope-scenarios" id="hope-scenarios"></div>
@@ -527,7 +536,7 @@ let chartCache = {};   // posId → base64 string or null (lazy loaded)
 let groupCache = [];   // [{id, posIds}]
 
 // ── Constants ─────────────────────────────────────────────────
-const WEEKLY_TARGET_PCT = 0.03;
+const WEEKLY_TARGET_PCT = 0.04;
 const ALL_TAGS = ['원비','더블비','캔들','이평선','지지저항','매물대','추세선','이격도','시가돌파','저가돌파','고가돌파'];
 
 // ── State ─────────────────────────────────────────────────────
@@ -536,7 +545,7 @@ let filterResult = 'all', filterSymbol = 'all', currentSort = 'newest';
 let currentNoteId = null, currentIsGroup = false, selectedTags = [];
 let selectMode = false, selectedSet = new Set();
 let calYear, calMonth, activeDayFilter = null;
-let hopeScenario = 'target';
+let hopeYears = 3;
 let pendingTradeData = null;
 
 // ── Settings ──────────────────────────────────────────────────
@@ -918,8 +927,11 @@ function calcWeekly() {
         const startBal=getBalanceAt(key+'T00:00:00');
         const endBal  =getBalanceAt(nextKey+'T00:00:00');
         const weekPos =POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
-        const pnl     =+(endBal-startBal).toFixed(2);
-        const wins    =weekPos.filter(p=>p.profit>0).length;
+        // 해당 주의 입금/출금액을 손익에서 제외
+        const weekDeposits=DEPOSITS.filter(d=>d.time&&getWeekKey(d.time)===key)
+                                   .reduce((s,d)=>s+(d.amount||0),0);
+        const pnl=+(endBal-startBal-weekDeposits).toFixed(2);
+        const wins=weekPos.filter(p=>p.profit>0).length;
         return {key, startBalance:startBal, endBalance:endBal, pnl,
                 target:startBal*WEEKLY_TARGET_PCT, met:pnl>=startBal*WEEKLY_TARGET_PCT,
                 count:weekPos.length, wins};
@@ -928,27 +940,49 @@ function calcWeekly() {
 
 // ── Overview ──────────────────────────────────────────────────
 function renderOverview() {
-    const roi=((CURRENT_BALANCE-INITIAL_BALANCE)/INITIAL_BALANCE*100);
+    const totalDeposited=DEPOSITS.filter(d=>d.amount>0).reduce((s,d)=>s+d.amount,0);
+    const totalWithdrawn=Math.abs(DEPOSITS.filter(d=>d.amount<0).reduce((s,d)=>s+d.amount,0));
+    const netCapital=totalDeposited-totalWithdrawn;
+    const tradingProfit=CURRENT_BALANCE-netCapital;
+    const roi=netCapital>0?(tradingProfit/netCapital*100):((CURRENT_BALANCE-INITIAL_BALANCE)/INITIAL_BALANCE*100);
     const weeks=calcWeekly();
     const today=new Date();
     const todayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
     const cw=weeks.find(w=>{const sun=addDaysToKey(w.key,6); return w.key<=todayKey&&sun>=todayKey;})||weeks[weeks.length-1];
-    const wTarget=cw?cw.target:CURRENT_BALANCE*WEEKLY_TARGET_PCT;
+    const wTarget=CURRENT_BALANCE*WEEKLY_TARGET_PCT;
     const wPnl=cw?cw.pnl:0;
-    const extraDeposits=DEPOSITS.filter(d=>d.amount>0).slice(1);
-    const totalDeposited=DEPOSITS.filter(d=>d.amount>0).reduce((s,d)=>s+d.amount,0);
-    const totalWithdrawn=Math.abs(DEPOSITS.filter(d=>d.amount<0).reduce((s,d)=>s+d.amount,0));
-    const netCapital=totalDeposited-totalWithdrawn;
-    const roiNote=extraDeposits.length>0?'(수익금 기준)':'';
+    const roiNote=DEPOSITS.length>0?'(순 매매기준)':'';
+    // Last completed week for withdrawal guideline
+    const completedWeeks=weeks.filter(w=>{const sun=addDaysToKey(w.key,6); return sun<todayKey;});
+    const lastWeek=completedWeeks.length?completedWeeks[completedWeeks.length-1]:null;
+    const lastWeekPnl=lastWeek?lastWeek.pnl:0;
+    const withdrawAmt=+(lastWeekPnl*0.5).toFixed(2);
+    const withdrawHtml=lastWeekPnl>0
+        ?'$'+withdrawAmt.toFixed(2)+'<br><span class="withdraw-guide-sub">지난주 $'+lastWeekPnl.toFixed(2)+' × 50%</span>'
+        :'<span class="muted">지난주 수익 없음</span>';
+    // Lot size recommendations (base: $1,000 → NQ 0.1, Gold 0.01, Oil 0.1)
+    const nqLot=(Math.round(CURRENT_BALANCE/1000*0.1*10)/10).toFixed(1);
+    const goldLot=(Math.round(CURRENT_BALANCE/1000*0.01*100)/100).toFixed(2);
+    const oilLot=(Math.round(CURRENT_BALANCE/1000*0.1*10)/10).toFixed(1);
     document.getElementById('overview-content').innerHTML=
         '<div class="overview-grid">'+
-        stat('초기자금','$'+INITIAL_BALANCE.toFixed(2),'',krw(INITIAL_BALANCE))+
         stat('현재잔고','$'+CURRENT_BALANCE.toFixed(2),'',krw(CURRENT_BALANCE))+
+        stat('총 입금','$'+totalDeposited.toFixed(2),'positive',krw(totalDeposited))+
+        stat('총 출금','$'+totalWithdrawn.toFixed(2),totalWithdrawn>0?'negative':'',totalWithdrawn>0?krw(totalWithdrawn):'')+
+        stat('순 매매손익',(tradingProfit>=0?'+':'')+'$'+tradingProfit.toFixed(2)+' '+roiNote,tradingProfit>=0?'positive':'negative',krw(tradingProfit))+
         stat('투자시작일',formatKoreanDateOnly(START_DATE))+
-        stat('총 수익률',(roi>=0?'+':'')+roi.toFixed(2)+'% '+roiNote,roi>=0?'positive':'negative',krw(CURRENT_BALANCE-netCapital))+
-        stat('이번주 목표','$'+wTarget.toFixed(2)+'<span class="muted"> (3%)</span>','',krw(wTarget))+
-        stat('이번주 손익',fmtPnl(wPnl)+(wPnl>=wTarget?' ✓':' ✗'),wPnl>=0?'positive':'negative',krw(Math.abs(wPnl)))+
-        '</div>';
+        stat('총 수익률',(roi>=0?'+':'')+roi.toFixed(2)+'%',roi>=0?'positive':'negative')+
+        stat('이번주 목표','$'+wTarget.toFixed(2)+'<span class="muted"> (4%)</span>','',krw(wTarget))+
+        stat('이번주 손익',fmtPnl(wPnl)+(wPnl>=wTarget?' ✓':' ✗')+'<br><span class="muted" style="font-size:12px">'+(wTarget>0?(wPnl/wTarget*100).toFixed(1):0)+'% 달성</span>',wPnl>=0?'positive':'negative',krw(Math.abs(wPnl)))+
+        stat('주1회 출금 기준',withdrawHtml,lastWeekPnl>0?'positive':'')+
+        '</div>'+
+        '<div class="lot-section">'+
+        '<div class="lot-section-title">💹 현재 잔고 기준 추천 랏수</div>'+
+        '<div class="lot-grid">'+
+        '<div class="lot-item"><div class="lot-label">나스닥 (NQ100)</div><div class="lot-value">'+nqLot+'</div><div class="lot-unit">lot</div></div>'+
+        '<div class="lot-item"><div class="lot-label">골드 (XAUUSD)</div><div class="lot-value">'+goldLot+'</div><div class="lot-unit">lot</div></div>'+
+        '<div class="lot-item"><div class="lot-label">오일 (WTI)</div><div class="lot-value">'+oilLot+'</div><div class="lot-unit">lot</div></div>'+
+        '</div></div>';
     document.getElementById('deposit-count').textContent=DEPOSITS.length+'건';
     let dHtml='';
     for(const d of DEPOSITS) {
@@ -1459,46 +1493,55 @@ function openWeekly() {
 function closeWeekly(){document.getElementById('weekly-modal').style.display='none';document.body.style.overflow='';}
 
 // ── Hope Circuit ──────────────────────────────────────────────
-function calcActualWeeklyRate() {
-    const weeks=calcWeekly(); if(!weeks.length) return 0;
-    return Math.pow(CURRENT_BALANCE/INITIAL_BALANCE, 1/weeks.length)-1;
+function calcHope(years) {
+    const B=CURRENT_BALANCE;
+    const netRate=0.02; // 4% profit × 50% reinvested = 2% net weekly compounding
+    const showAnnual=years>5;
+    const step=showAnnual?52:26;
+    const snapshots=[];
+    for(let w=step; w<=years*52; w+=step) {
+        const pow=Math.pow(1+netRate,w);
+        const balance=B*pow;
+        const cumWithdrawal=B*(pow-1); // geometric series: sum of weekly 2% withdrawals
+        const weeklyW=balance*0.04*0.5;
+        let label;
+        if(showAnnual) label=(w/52)+'년';
+        else if(w===26) label='6개월';
+        else if(w%52===0) label=(w/52)+'년';
+        else label=Math.floor(w/52)+'년 6개월';
+        snapshots.push({label,balance,weeklyW,cumWithdrawal,total:balance+cumWithdrawal,mult:(balance+cumWithdrawal)/B});
+    }
+    return snapshots;
 }
-function hopeProject(weeklyRate,years) { return CURRENT_BALANCE*Math.pow(1+weeklyRate,52*years); }
 function renderHope() {
-    const actualRate=calcActualWeeklyRate(), weeks=calcWeekly();
-    const scenarios=[
-        {id:'actual',label:'현재 페이스',rate:actualRate,note:'실제 주당 '+((actualRate*100).toFixed(1))+'%'},
-        {id:'target',label:'주 3% (목표)',rate:0.03,note:'매주 3% 목표 달성 시'},
-        {id:'1pct',  label:'주 1% (보수)',rate:0.01,note:'주당 1% 안정적 운용'},
-        {id:'half',  label:'주 0.5% (초보수)',rate:0.005,note:'주당 0.5%'}
-    ];
-    const sc=scenarios.find(s=>s.id===hopeScenario)||scenarios[1];
+    const snapshots=calcHope(hopeYears);
+    const wkTarget=CURRENT_BALANCE*0.04;
+    const wkWithdraw=wkTarget*0.5;
     document.getElementById('hope-meta').innerHTML=
         '기준잔고: <strong>$'+CURRENT_BALANCE.toFixed(2)+(KRW_RATE?' ('+krw(CURRENT_BALANCE)+')':'')+
-        '</strong> &nbsp;|&nbsp; 투자기간: <strong>'+weeks.length+'주</strong>'+
-        ' &nbsp;|&nbsp; 실제 주평균: <strong>'+(actualRate*100).toFixed(2)+'%/주</strong>';
-    document.getElementById('hope-scenarios').innerHTML=scenarios.map(s=>
-        '<button class="hope-scenario-btn'+(s.id===hopeScenario?' active':'')+'" onclick="setHopeScenario(\''+s.id+'\')">'+
-        s.label+'<br><span style="font-size:11px;opacity:.7">'+s.note+'</span></button>'
+        '</strong> &nbsp;|&nbsp; 주 4% 목표: <strong>$'+wkTarget.toFixed(2)+
+        '</strong> &nbsp;|&nbsp; 주간 출금 (50%): <strong class="positive">$'+wkWithdraw.toFixed(2)+
+        '</strong> &nbsp;|&nbsp; 계좌 재투자 (50%): <strong>$'+wkWithdraw.toFixed(2)+'</strong>';
+    document.getElementById('hope-scenarios').innerHTML=[1,2,3,5,10].map(y=>
+        '<button class="hope-scenario-btn'+(hopeYears===y?' active':'')+'" onclick="setHopeYears('+y+')">'+y+'년</button>'
     ).join('');
-    const maxBal=hopeProject(sc.rate,5);
-    let rows='<thead><tr><th>기간</th><th>예상 잔고</th><th>예상 수익</th><th>배율</th><th></th></tr></thead><tbody>';
-    [0.5,1,2,3,4,5].forEach(yr=>{
-        const bal=hopeProject(sc.rate,yr), gain=bal-CURRENT_BALANCE, mult=(bal/CURRENT_BALANCE).toFixed(1);
-        const barW=Math.min(100,Math.round(bal/maxBal*100));
+    let rows='<thead><tr>'+
+        '<th>기간</th><th>계좌잔고</th><th>주간출금액</th><th>누적출금</th><th>총 자산</th><th>배율</th>'+
+        '</tr></thead><tbody>';
+    for(const s of snapshots) {
         rows+='<tr>'+
-            '<td><strong>'+(yr<1?'6개월':yr+'년')+'</strong></td>'+
-            '<td>$'+Math.round(bal).toLocaleString()+(KRW_RATE?'<br><span class="hope-krw">'+krw(bal)+'</span>':'')+'</td>'+
-            '<td class="positive">+$'+Math.round(gain).toLocaleString()+(KRW_RATE?'<br><span class="hope-krw">+'+krw(gain)+'</span>':'')+'</td>'+
-            '<td><strong>'+mult+'배</strong></td>'+
-            '<td style="width:80px"></td></tr>'+
-            '<tr class="hope-bar-row"><td colspan="5">'+
-            '<div class="hope-bar-wrap"><div class="hope-bar-fill" style="width:'+barW+'%"></div></div></td></tr>';
-    });
+            '<td><strong>'+s.label+'</strong></td>'+
+            '<td>$'+Math.round(s.balance).toLocaleString()+(KRW_RATE?'<br><span class="hope-krw">'+krw(s.balance)+'</span>':'')+'</td>'+
+            '<td class="positive">$'+Math.round(s.weeklyW).toLocaleString()+'/주'+(KRW_RATE?'<br><span class="hope-krw">'+krw(s.weeklyW)+'</span>':'')+'</td>'+
+            '<td class="positive"><strong>$'+Math.round(s.cumWithdrawal).toLocaleString()+'</strong>'+(KRW_RATE?'<br><span class="hope-krw">'+krw(s.cumWithdrawal)+'</span>':'')+'</td>'+
+            '<td>$'+Math.round(s.total).toLocaleString()+(KRW_RATE?'<br><span class="hope-krw">'+krw(s.total)+'</span>':'')+'</td>'+
+            '<td><strong>'+s.mult.toFixed(1)+'배</strong></td>'+
+            '</tr>';
+    }
     rows+='</tbody>';
     document.getElementById('hope-table').innerHTML=rows;
 }
-function setHopeScenario(s){hopeScenario=s;renderHope();}
+function setHopeYears(y){hopeYears=y;renderHope();}
 function openHope(){renderHope();document.getElementById('hope-modal').style.display='flex';document.body.style.overflow='hidden';}
 function closeHope(){document.getElementById('hope-modal').style.display='none';document.body.style.overflow='';}
 
