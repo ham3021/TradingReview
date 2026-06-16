@@ -507,6 +507,10 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
         <label>Anthropic API Key <span style="font-weight:400;color:#8eaaca">(거래내역 OCR용)</span></label>
         <input type="password" id="anthropic-key-input" placeholder="sk-ant-...">
       </div>
+      <div class="settings-field">
+        <label>현재 잔고 ($) <span style="font-weight:400;color:#8eaaca">브로커 실제 잔고와 동기화</span></label>
+        <input type="number" id="balance-input" placeholder="0.00" step="0.01">
+      </div>
       <div class="settings-actions">
         <button class="btn-secondary" onclick="closeSettings()">취소</button>
         <button class="btn-primary" onclick="saveSettingsAndReload()">저장 후 재시작</button>
@@ -561,19 +565,24 @@ function openSettings() {
     document.getElementById('sb-url-input').value = s.sbUrl;
     document.getElementById('sb-key-input').value = s.sbKey;
     document.getElementById('anthropic-key-input').value = s.anthropicKey;
+    document.getElementById('balance-input').value = CURRENT_BALANCE ? CURRENT_BALANCE.toFixed(2) : '';
     document.getElementById('settings-modal').style.display = 'flex';
 }
 function closeSettings() {
     document.getElementById('settings-modal').style.display = 'none';
 }
-function saveSettingsAndReload() {
+async function saveSettingsAndReload() {
     const url = document.getElementById('sb-url-input').value.trim();
     const key = document.getElementById('sb-key-input').value.trim();
     const ak  = document.getElementById('anthropic-key-input').value.trim();
+    const balStr = document.getElementById('balance-input').value.trim();
     if (!url || !key) { showToast('Supabase URL과 키를 입력하세요'); return; }
     localStorage.setItem('sb_url', url);
     localStorage.setItem('sb_key', key);
     if (ak) localStorage.setItem('anthropic_key', ak);
+    if (balStr !== '' && !isNaN(parseFloat(balStr)) && sb) {
+        await sb.from('app_settings').upsert({key:'current_balance', value:parseFloat(balStr)}, {onConflict:'key'});
+    }
     closeSettings();
     location.reload();
 }
@@ -924,7 +933,7 @@ function calcWeekly() {
 
     return sortedKeys.map(key => {
         const weekPos=POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
-        const pnl=+weekPos.reduce((s,p)=>s+(p.profit+(p.commission||0)+(p.swap||0)),0).toFixed(2);
+        const pnl=+weekPos.reduce((s,p)=>s+p.profit,0).toFixed(2);
         const wins=weekPos.filter(p=>p.profit>0).length;
         const startBal=getBalanceAt(key+'T00:00:00');
         return {key, startBalance:startBal, endBalance:startBal+pnl, pnl,
@@ -1429,9 +1438,14 @@ async function confirmTrade() {
     if(!symbol||!posId||!openTime||!closeTime) {
         showToast('종목, 포지션ID, 시간은 필수입니다'); return;
     }
-    if(POSITIONS.find(p=>p.id===posId)) {
+    if(posId && POSITIONS.find(p=>p.id===posId)) {
         showToast('이미 존재하는 포지션입니다 (#'+posId+')'); return;
     }
+    const fuzzyDup=POSITIONS.find(p=>
+        p.symbol===symbol && p.openTime===openTime && p.direction===direction &&
+        Math.abs(p.profit-profit)<0.01
+    );
+    if(fuzzyDup) { showToast('동일한 거래가 이미 존재합니다 (종목·진입시간·손익 일치)'); return; }
     const newRow={
         id: posId, open_time: openTime, close_time: closeTime,
         symbol: symbol, symbol_name: symName(symbol),
@@ -1453,8 +1467,7 @@ async function confirmTrade() {
         sl:null, tp:null, commission:newRow.commission, swap:newRow.swap,
         profit:newRow.profit, source:'mobile'
     });
-    const netPnl = profit + commission + swap;
-    CURRENT_BALANCE = parseFloat((CURRENT_BALANCE + netPnl).toFixed(2));
+    CURRENT_BALANCE = parseFloat((CURRENT_BALANCE + profit).toFixed(2));
     if(sb) {
         sb.from('app_settings').upsert({key:'current_balance', value:CURRENT_BALANCE}, {onConflict:'key'});
     }
