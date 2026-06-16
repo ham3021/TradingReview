@@ -923,16 +923,11 @@ function calcWeekly() {
     const sortedKeys=Array.from(keys).sort();
 
     return sortedKeys.map(key => {
-        const nextKey=addDaysToKey(key,7);
-        const startBal=getBalanceAt(key+'T00:00:00');
-        const endBal  =getBalanceAt(nextKey+'T00:00:00');
-        const weekPos =POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
-        // 해당 주의 입금/출금액을 손익에서 제외
-        const weekDeposits=DEPOSITS.filter(d=>d.time&&getWeekKey(d.time)===key)
-                                   .reduce((s,d)=>s+(d.amount||0),0);
-        const pnl=+(endBal-startBal-weekDeposits).toFixed(2);
+        const weekPos=POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
+        const pnl=+weekPos.reduce((s,p)=>s+(p.profit+(p.commission||0)+(p.swap||0)),0).toFixed(2);
         const wins=weekPos.filter(p=>p.profit>0).length;
-        return {key, startBalance:startBal, endBalance:endBal, pnl,
+        const startBal=getBalanceAt(key+'T00:00:00');
+        return {key, startBalance:startBal, endBalance:startBal+pnl, pnl,
                 target:startBal*WEEKLY_TARGET_PCT, met:pnl>=startBal*WEEKLY_TARGET_PCT,
                 count:weekPos.length, wins};
     });
@@ -1458,6 +1453,11 @@ async function confirmTrade() {
         sl:null, tp:null, commission:newRow.commission, swap:newRow.swap,
         profit:newRow.profit, source:'mobile'
     });
+    const netPnl = profit + commission + swap;
+    CURRENT_BALANCE = parseFloat((CURRENT_BALANCE + netPnl).toFixed(2));
+    if(sb) {
+        sb.from('app_settings').upsert({key:'current_balance', value:CURRENT_BALANCE}, {onConflict:'key'});
+    }
     showToast('거래 저장 완료!');
     closeUploadModal();
     renderList(); renderCalendar(); renderOverview();
