@@ -258,6 +258,22 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
   .modal-content{border-radius:14px}
   .chart-area{min-height:160px}
 }
+/* Top 3 Loss Boxes */
+.loss-top-section{margin-top:14px}
+.loss-top-title{font-size:11px;font-weight:700;color:#d9604e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.loss-top-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.loss-top-box{background:#fff8f7;border:1.5px solid #f5c0ba;border-radius:12px;padding:12px 14px;cursor:pointer;transition:all .15s}
+.loss-top-box:hover{border-color:#e07575;background:#fef2f1;transform:translateY(-1px);box-shadow:0 2px 8px rgba(217,96,78,.15)}
+.loss-top-box.empty{cursor:default;opacity:.5;background:#f8f9fa;border-color:#d0e2f5}
+.loss-top-box.empty:hover{transform:none;box-shadow:none}
+.loss-rank{font-size:10px;font-weight:700;color:#8eaaca;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.loss-label{font-size:12px;font-weight:700;color:#1e3050;margin-bottom:3px}
+.loss-pnl{font-size:15px;font-weight:800;color:#d9604e}
+.loss-krw{font-size:11px;color:#d97706;font-weight:500;margin-top:1px}
+.loss-memo-preview{font-size:11px;color:#5b8edc;margin-top:6px;padding-top:6px;border-top:1px dashed #f5c0ba;font-style:italic;word-break:break-word}
+/* Loss Memo Modal */
+.loss-memo-modal-content{max-width:480px}
+.loss-memo-body{padding:20px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -434,12 +450,12 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
             <input type="number" id="mf-close-price" placeholder="30285.25" step="any">
           </div>
           <div class="mf-group">
-            <label>진입시간</label>
-            <input type="text" id="mf-open-time" placeholder="2026-05-29T22:03:36">
+            <label>진입시간 <span style="font-weight:400;color:#5b8edc;font-size:10px">MT5시간 (+6h 자동)</span></label>
+            <input type="text" id="mf-open-time" placeholder="2026-05-29T16:03:36">
           </div>
           <div class="mf-group">
-            <label>청산시간</label>
-            <input type="text" id="mf-close-time" placeholder="2026-05-29T22:03:53">
+            <label>청산시간 <span style="font-weight:400;color:#5b8edc;font-size:10px">MT5시간 (+6h 자동)</span></label>
+            <input type="text" id="mf-close-time" placeholder="2026-05-29T16:03:53">
           </div>
           <hr class="mf-divider span2" style="grid-column:span 2">
           <div class="mf-group">
@@ -507,13 +523,30 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
         <label>Anthropic API Key <span style="font-weight:400;color:#8eaaca">(거래내역 OCR용)</span></label>
         <input type="password" id="anthropic-key-input" placeholder="sk-ant-...">
       </div>
-      <div class="settings-field">
-        <label>현재 잔고 ($) <span style="font-weight:400;color:#8eaaca">브로커 실제 잔고와 동기화</span></label>
-        <input type="number" id="balance-input" placeholder="0.00" step="0.01">
-      </div>
       <div class="settings-actions">
         <button class="btn-secondary" onclick="closeSettings()">취소</button>
         <button class="btn-primary" onclick="saveSettingsAndReload()">저장 후 재시작</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loss Memo Modal -->
+<div id="loss-memo-modal" class="modal-overlay" style="display:none">
+  <div class="modal-content loss-memo-modal-content">
+    <div class="modal-header">
+      <div>
+        <h2 id="loss-memo-label">최대손실 메모</h2>
+        <div id="loss-memo-pnl" style="font-size:15px;font-weight:800;color:#d9604e;margin-top:4px"></div>
+      </div>
+      <button class="btn-close" onclick="closeLossMemo()">✕</button>
+    </div>
+    <div class="loss-memo-body">
+      <div style="font-size:13px;color:#7a96b8">이 매매에서 무엇을 배웠나요? 반성할 점을 기록해두세요.</div>
+      <textarea id="loss-memo-input" rows="6" style="width:100%;background:#f8fbff;border:1px solid #d0e2f5;border-radius:9px;color:#1e3050;padding:9px 12px;font-size:13px;font-family:inherit;resize:vertical" placeholder="메모를 입력하세요..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn-secondary" onclick="closeLossMemo()">취소</button>
+        <button class="btn-primary" onclick="saveLossMemo()">💾 저장</button>
       </div>
     </div>
   </div>
@@ -538,6 +571,8 @@ let START_DATE = '';
 let noteCache  = {};   // posId → {tags, entryReason, tpCriteria, slCriteria, keyPoints, hasChart}
 let chartCache = {};   // posId → base64 string or null (lazy loaded)
 let groupCache = [];   // [{id, posIds}]
+let WEEKLY_TARGETS = {}; // mondayKey → {balance, target, set_at}
+let LOSS_MEMOS = {};     // posId/groupId → memo string
 
 // ── Constants ─────────────────────────────────────────────────
 const WEEKLY_TARGET_PCT = 0.04;
@@ -565,24 +600,19 @@ function openSettings() {
     document.getElementById('sb-url-input').value = s.sbUrl;
     document.getElementById('sb-key-input').value = s.sbKey;
     document.getElementById('anthropic-key-input').value = s.anthropicKey;
-    document.getElementById('balance-input').value = CURRENT_BALANCE ? CURRENT_BALANCE.toFixed(2) : '';
     document.getElementById('settings-modal').style.display = 'flex';
 }
 function closeSettings() {
     document.getElementById('settings-modal').style.display = 'none';
 }
-async function saveSettingsAndReload() {
+function saveSettingsAndReload() {
     const url = document.getElementById('sb-url-input').value.trim();
     const key = document.getElementById('sb-key-input').value.trim();
     const ak  = document.getElementById('anthropic-key-input').value.trim();
-    const balStr = document.getElementById('balance-input').value.trim();
     if (!url || !key) { showToast('Supabase URL과 키를 입력하세요'); return; }
     localStorage.setItem('sb_url', url);
     localStorage.setItem('sb_key', key);
     if (ak) localStorage.setItem('anthropic_key', ak);
-    if (balStr !== '' && !isNaN(parseFloat(balStr)) && sb) {
-        await sb.from('app_settings').upsert({key:'current_balance', value:parseFloat(balStr)}, {onConflict:'key'});
-    }
     closeSettings();
     location.reload();
 }
@@ -655,6 +685,8 @@ async function loadAll() {
         CURRENT_BALANCE       = sm['current_balance']      != null ? Number(sm['current_balance'])      : 2016.01;
         PERIOD_START_BALANCE  = sm['period_start_balance'] != null ? Number(sm['period_start_balance'])  : CURRENT_BALANCE;
         START_DATE            = sm['start_date']           || '2026-05-04T23:37:03';
+        WEEKLY_TARGETS        = (sm['weekly_targets'] && typeof sm['weekly_targets'] === 'object') ? sm['weekly_targets'] : {};
+        LOSS_MEMOS            = (sm['loss_memos']    && typeof sm['loss_memos']    === 'object') ? sm['loss_memos']    : {};
 
     } catch(e) {
         showLoading(false);
@@ -782,6 +814,21 @@ function symName(s) {
 function fmtPnl(v)    { return (v>=0?'+':'-')+'$'+Math.abs(v).toFixed(2); }
 function fmtProfit(v) { return (v>=0?'+':'')+'$'+v.toFixed(2); }
 function escHtml(s)   { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function add6hJS(timeStr) {
+    if(!timeStr) return timeStr;
+    try {
+        // Support both "YYYY-MM-DDTHH:MM:SS" and "YYYY.MM.DD HH:MM:SS"
+        const normalized = timeStr.trim().replace(/\./g,'-').replace(' ','T');
+        const d = new Date(normalized);
+        if(isNaN(d.getTime())) return timeStr;
+        d.setTime(d.getTime() + 6*60*60*1000);
+        return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+
+               String(d.getDate()).padStart(2,'0')+'T'+
+               String(d.getHours()).padStart(2,'0')+':'+
+               String(d.getMinutes()).padStart(2,'0')+':'+
+               String(d.getSeconds()).padStart(2,'0');
+    } catch(e) { return timeStr; }
+}
 function stat(label,val,cls,sub) {
     return '<div class="stat-card">'+
         '<div class="stat-label">'+label+'</div>'+
@@ -916,15 +963,20 @@ function clearDayFilter() { setDayFilter(null); }
 
 // ── Weekly Calculation ────────────────────────────────────────
 function getBalanceAt(timeStr) {
-    // BALANCE_HISTORY의 마지막 잔고 (timeStr 이전)
-    // 없으면 PERIOD_START_BALANCE (이 Excel 기간 시작 잔고) 사용
     let bal = null;
     for(const e of BALANCE_HISTORY) {
         if(e.time && e.time < timeStr) bal = e.balance;
     }
     if(bal !== null) return bal;
-    // history 이전이면: 기간 시작잔고 사용 (2016.01 같은 값)
     return PERIOD_START_BALANCE || INITIAL_BALANCE;
+}
+function getMondayKey(dateStr) {
+    const [y,mo,dy] = (dateStr||new Date().toISOString().split('T')[0]).split('-').map(Number);
+    const d = new Date(y, mo-1, dy);
+    const dow = d.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(y, mo-1, dy + diff);
+    return mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
 }
 function calcWeekly() {
     const keys=new Set();
@@ -933,13 +985,45 @@ function calcWeekly() {
 
     return sortedKeys.map(key => {
         const weekPos=POSITIONS.filter(p=>p.closeTime&&getWeekKey(p.closeTime)===key);
-        const pnl=+weekPos.reduce((s,p)=>s+p.profit,0).toFixed(2);
-        const wins=weekPos.filter(p=>p.profit>0).length;
-        const startBal=getBalanceAt(key+'T00:00:00');
-        return {key, startBalance:startBal, endBalance:startBal+pnl, pnl,
-                target:startBal*WEEKLY_TARGET_PCT, met:pnl>=startBal*WEEKLY_TARGET_PCT,
-                count:weekPos.length, wins};
+        // Position-based P&L: includes gross profit + commission + swap
+        const pnl=+weekPos.reduce((s,p)=>s+p.profit+p.commission+p.swap,0).toFixed(2);
+        const wins=weekPos.filter(p=>(p.profit+p.commission+p.swap)>0).length;
+        const stored=WEEKLY_TARGETS[key];
+        const startBal=stored?stored.balance:getBalanceAt(key+'T00:00:00');
+        const target=stored?stored.target:+(startBal*WEEKLY_TARGET_PCT).toFixed(2);
+        return {key, startBalance:startBal, pnl, target, met:pnl>=target, count:weekPos.length, wins};
     });
+}
+async function checkAndSetWeeklyTarget() {
+    const todayStr=new Date().toISOString().split('T')[0];
+    const monKey=getMondayKey(todayStr);
+    if(WEEKLY_TARGETS[monKey]) return; // already locked for this week
+    const targetAmt=+(CURRENT_BALANCE*WEEKLY_TARGET_PCT).toFixed(2);
+    WEEKLY_TARGETS[monKey]={balance:CURRENT_BALANCE, target:targetAmt, set_at:new Date().toISOString()};
+    if(sb) {
+        await sb.from('app_settings').upsert({key:'weekly_targets',value:WEEKLY_TARGETS},{onConflict:'key'});
+    }
+}
+function getTop3Losses() {
+    const items=getDisplayItems();
+    const losses=[];
+    for(const item of items) {
+        let pnl,label,id;
+        if(item.type==='group') {
+            const ps=item.data.positions;
+            pnl=ps.reduce((s,p)=>s+p.profit+p.commission+p.swap,0);
+            label=ps[0].symbolName+' '+ps.length+'분할';
+            id=item.data.id;
+        } else {
+            const p=item.data;
+            pnl=p.profit+p.commission+p.swap;
+            label=p.symbolName+' '+(p.direction==='buy'?'Buy':'Sell');
+            id=p.id;
+        }
+        if(pnl<0) losses.push({id,label,pnl:+pnl.toFixed(2),openTime:item.data.openTime});
+    }
+    losses.sort((a,b)=>a.pnl-b.pnl);
+    return losses.slice(0,3);
 }
 
 // ── Overview ──────────────────────────────────────────────────
@@ -947,39 +1031,65 @@ function renderOverview() {
     const totalDeposited=DEPOSITS.filter(d=>d.amount>0).reduce((s,d)=>s+d.amount,0);
     const totalWithdrawn=Math.abs(DEPOSITS.filter(d=>d.amount<0).reduce((s,d)=>s+d.amount,0));
     const netCapital=totalDeposited-totalWithdrawn;
-    const tradingProfit=CURRENT_BALANCE-netCapital;
-    const roi=netCapital>0?(tradingProfit/netCapital*100):((CURRENT_BALANCE-INITIAL_BALANCE)/INITIAL_BALANCE*100);
+    // Position-based trading profit (matches weekly calc exactly)
+    const tradingProfit=+POSITIONS.reduce((s,p)=>s+p.profit+p.commission+p.swap,0).toFixed(2);
+    const roi=netCapital>0?(tradingProfit/netCapital*100):0;
+
+    const todayStr=new Date().toISOString().split('T')[0];
+    const monKey=getMondayKey(todayStr);
+    const storedTarget=WEEKLY_TARGETS[monKey];
+    const wTargetBase=storedTarget?storedTarget.balance:CURRENT_BALANCE;
+    const wTarget=storedTarget?storedTarget.target:+(CURRENT_BALANCE*WEEKLY_TARGET_PCT).toFixed(2);
+
     const weeks=calcWeekly();
-    const today=new Date();
-    const todayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-    const cw=weeks.find(w=>{const sun=addDaysToKey(w.key,6); return w.key<=todayKey&&sun>=todayKey;})||weeks[weeks.length-1];
-    const wTarget=CURRENT_BALANCE*WEEKLY_TARGET_PCT;
+    const cw=weeks.find(w=>w.key===monKey)||weeks[weeks.length-1];
     const wPnl=cw?cw.pnl:0;
-    const roiNote=DEPOSITS.length>0?'(순 매매기준)':'';
-    // Last completed week for withdrawal guideline
-    const completedWeeks=weeks.filter(w=>{const sun=addDaysToKey(w.key,6); return sun<todayKey;});
+
+    const completedWeeks=weeks.filter(w=>{const sun=addDaysToKey(w.key,6);return sun<todayStr;});
     const lastWeek=completedWeeks.length?completedWeeks[completedWeeks.length-1]:null;
     const lastWeekPnl=lastWeek?lastWeek.pnl:0;
     const withdrawAmt=+(lastWeekPnl*0.5).toFixed(2);
     const withdrawHtml=lastWeekPnl>0
         ?'$'+withdrawAmt.toFixed(2)+'<br><span class="withdraw-guide-sub">지난주 $'+lastWeekPnl.toFixed(2)+' × 50%</span>'
         :'<span class="muted">지난주 수익 없음</span>';
-    // Lot size recommendations (base: $1,000 → NQ 0.1, Gold 0.01, Oil 0.1)
+
     const nqLot=(Math.round(CURRENT_BALANCE/1000*0.1*10)/10).toFixed(1);
     const goldLot=(Math.round(CURRENT_BALANCE/1000*0.01*100)/100).toFixed(2);
     const oilLot=(Math.round(CURRENT_BALANCE/1000*0.1*10)/10).toFixed(1);
+
+    const top3=getTop3Losses();
+    const lossLabels=['Top 1','Top 2','Top 3'];
+    let lossHtml='<div class="loss-top-section"><div class="loss-top-title">⚠️ 최대손실 TOP3</div><div class="loss-top-grid">';
+    for(let rank=0;rank<3;rank++){
+        const loss=top3[rank];
+        if(!loss){
+            lossHtml+='<div class="loss-top-box empty"><div class="loss-rank">'+lossLabels[rank]+'</div><div style="color:#b0bec5;font-size:12px;margin-top:4px">없음</div></div>';
+        } else {
+            const memo=LOSS_MEMOS[loss.id]||'';
+            lossHtml+='<div class="loss-top-box" onclick="openLossMemo('+rank+')" data-loss-rank="'+rank+'">'+
+                '<div class="loss-rank">'+lossLabels[rank]+'</div>'+
+                '<div class="loss-label">'+escHtml(loss.label)+'</div>'+
+                '<div class="loss-pnl">'+fmtProfit(loss.pnl)+'</div>'+
+                (KRW_RATE?'<div class="loss-krw">'+krw(Math.abs(loss.pnl))+'</div>':'')+
+                (memo?'<div class="loss-memo-preview">📝 '+escHtml(memo.substring(0,60))+(memo.length>60?'…':'')+'</div>':'')+
+                '</div>';
+        }
+    }
+    lossHtml+='</div></div>';
+
     document.getElementById('overview-content').innerHTML=
         '<div class="overview-grid">'+
         stat('현재잔고','$'+CURRENT_BALANCE.toFixed(2),'',krw(CURRENT_BALANCE))+
         stat('총 입금','$'+totalDeposited.toFixed(2),'positive',krw(totalDeposited))+
         stat('총 출금','$'+totalWithdrawn.toFixed(2),totalWithdrawn>0?'negative':'',totalWithdrawn>0?krw(totalWithdrawn):'')+
-        stat('순 매매손익',(tradingProfit>=0?'+':'')+'$'+tradingProfit.toFixed(2)+' '+roiNote,tradingProfit>=0?'positive':'negative',krw(tradingProfit))+
+        stat('순 매매손익',(tradingProfit>=0?'+':'')+'$'+tradingProfit.toFixed(2),tradingProfit>=0?'positive':'negative',krw(tradingProfit))+
         stat('투자시작일',formatKoreanDateOnly(START_DATE))+
         stat('총 수익률',(roi>=0?'+':'')+roi.toFixed(2)+'%',roi>=0?'positive':'negative')+
-        stat('이번주 목표','$'+wTarget.toFixed(2)+'<span class="muted"> (4%)</span>','',krw(wTarget))+
+        stat('이번주 목표','$'+wTarget.toFixed(2)+'<span class="muted"> (4%)</span><br><span class="muted" style="font-size:10px">기준잔고 $'+wTargetBase.toFixed(2)+'</span>','',krw(wTarget))+
         stat('이번주 손익',fmtPnl(wPnl)+(wPnl>=wTarget?' ✓':' ✗')+'<br><span class="muted" style="font-size:12px">'+(wTarget>0?(wPnl/wTarget*100).toFixed(1):0)+'% 달성</span>',wPnl>=0?'positive':'negative',krw(Math.abs(wPnl)))+
         stat('주1회 출금 기준',withdrawHtml,lastWeekPnl>0?'positive':'')+
         '</div>'+
+        lossHtml+
         '<div class="lot-section">'+
         '<div class="lot-section-title">💹 현재 잔고 기준 추천 랏수</div>'+
         '<div class="lot-grid">'+
@@ -998,6 +1108,36 @@ function renderOverview() {
             '</div></div>';
     }
     document.getElementById('deposit-list').innerHTML=dHtml;
+}
+
+// ── Loss Memo ─────────────────────────────────────────────────
+let currentLossId=null;
+function openLossMemo(rank) {
+    const top3=getTop3Losses();
+    if(rank>=top3.length) return;
+    const loss=top3[rank];
+    currentLossId=loss.id;
+    document.getElementById('loss-memo-label').textContent=['Top 1','Top 2','Top 3'][rank]+' — '+loss.label;
+    document.getElementById('loss-memo-pnl').textContent=fmtProfit(loss.pnl)+(KRW_RATE?' ('+krw(Math.abs(loss.pnl))+')':'');
+    document.getElementById('loss-memo-input').value=LOSS_MEMOS[loss.id]||'';
+    document.getElementById('loss-memo-modal').style.display='flex';
+    document.body.style.overflow='hidden';
+}
+function closeLossMemo() {
+    document.getElementById('loss-memo-modal').style.display='none';
+    document.body.style.overflow='';
+    currentLossId=null;
+}
+async function saveLossMemo() {
+    if(!currentLossId) return;
+    const memo=document.getElementById('loss-memo-input').value.trim();
+    LOSS_MEMOS[currentLossId]=memo;
+    if(sb) {
+        await sb.from('app_settings').upsert({key:'loss_memos',value:LOSS_MEMOS},{onConflict:'key'});
+    }
+    closeLossMemo();
+    renderOverview();
+    showToast('메모가 저장되었습니다');
 }
 function toggleDeposits() {
     const el=document.getElementById('deposit-list'), ic=document.getElementById('deposit-toggle-icon');
@@ -1430,22 +1570,18 @@ async function confirmTrade() {
     const posId    = document.getElementById('mf-posid').value.trim();
     const openPrice  = parseFloat(document.getElementById('mf-open-price').value)  || 0;
     const closePrice = parseFloat(document.getElementById('mf-close-price').value) || 0;
-    const openTime   = document.getElementById('mf-open-time').value.trim();
-    const closeTime  = document.getElementById('mf-close-time').value.trim();
+    // +6h 자동 적용: 사용자가 MT5 브로커 시간 그대로 입력해도 KST로 변환
+    const openTime   = add6hJS(document.getElementById('mf-open-time').value.trim());
+    const closeTime  = add6hJS(document.getElementById('mf-close-time').value.trim());
     const profit     = parseFloat(document.getElementById('mf-profit').value)     || 0;
     const commission = parseFloat(document.getElementById('mf-commission').value) || 0;
     const swap       = parseFloat(document.getElementById('mf-swap').value)       || 0;
     if(!symbol||!posId||!openTime||!closeTime) {
         showToast('종목, 포지션ID, 시간은 필수입니다'); return;
     }
-    if(posId && POSITIONS.find(p=>p.id===posId)) {
+    if(POSITIONS.find(p=>p.id===posId)) {
         showToast('이미 존재하는 포지션입니다 (#'+posId+')'); return;
     }
-    const fuzzyDup=POSITIONS.find(p=>
-        p.symbol===symbol && p.openTime===openTime && p.direction===direction &&
-        Math.abs(p.profit-profit)<0.01
-    );
-    if(fuzzyDup) { showToast('동일한 거래가 이미 존재합니다 (종목·진입시간·손익 일치)'); return; }
     const newRow={
         id: posId, open_time: openTime, close_time: closeTime,
         symbol: symbol, symbol_name: symName(symbol),
@@ -1467,9 +1603,10 @@ async function confirmTrade() {
         sl:null, tp:null, commission:newRow.commission, swap:newRow.swap,
         profit:newRow.profit, source:'mobile'
     });
-    CURRENT_BALANCE = parseFloat((CURRENT_BALANCE + profit).toFixed(2));
+    // Update CURRENT_BALANCE to reflect this trade
+    CURRENT_BALANCE = +(CURRENT_BALANCE + profit + commission + swap).toFixed(2);
     if(sb) {
-        sb.from('app_settings').upsert({key:'current_balance', value:CURRENT_BALANCE}, {onConflict:'key'});
+        await sb.from('app_settings').upsert({key:'current_balance',value:CURRENT_BALANCE},{onConflict:'key'});
     }
     showToast('거래 저장 완료!');
     closeUploadModal();
@@ -1493,7 +1630,7 @@ function openWeekly() {
     });
     document.getElementById('weekly-content').innerHTML=
         '<div class="weekly-body"><table class="weekly-table"><thead><tr>'+
-        '<th>주차</th><th>기간</th><th>시작잔고</th><th>목표(3%)</th><th>실현손익</th><th>거래</th><th>달성</th>'+
+        '<th>주차</th><th>기간</th><th>시작잔고</th><th>목표(4%)</th><th>실현손익</th><th>거래</th><th>달성</th>'+
         '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
         '<div class="weekly-summary">'+
         '<span>목표 달성 <strong class="positive">'+metCnt+'</strong>/'+weeks.length+'주</span>'+
@@ -1574,6 +1711,8 @@ async function init() {
         return;
     }
 
+    await checkAndSetWeeklyTarget();
+
     renderOverview();
     initCalendar();
     renderList();
@@ -1582,17 +1721,18 @@ async function init() {
     setupChartFileInput();
     setupTradeUploadInput();
 
-    ['detail-modal','weekly-modal','hope-modal','upload-modal'].forEach(id => {
+    ['detail-modal','weekly-modal','hope-modal','upload-modal','loss-memo-modal'].forEach(id => {
         document.getElementById(id).addEventListener('click', e => {
             if(e.target!==e.currentTarget) return;
             if(id==='detail-modal') closeDetail();
             else if(id==='weekly-modal') closeWeekly();
             else if(id==='hope-modal') closeHope();
             else if(id==='upload-modal') closeUploadModal();
+            else if(id==='loss-memo-modal') closeLossMemo();
         });
     });
     document.addEventListener('keydown', e => {
-        if(e.key==='Escape') { closeDetail(); closeWeekly(); closeHope(); closeUploadModal(); closeSettings(); }
+        if(e.key==='Escape') { closeDetail(); closeWeekly(); closeHope(); closeUploadModal(); closeSettings(); closeLossMemo(); }
     });
 }
 document.addEventListener('DOMContentLoaded', init);
