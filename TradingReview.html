@@ -274,6 +274,39 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 /* Loss Memo Modal */
 .loss-memo-modal-content{max-width:480px}
 .loss-memo-body{padding:20px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+/* 절대원칙 Banner */
+.principle-banner{background:linear-gradient(135deg,#1a1a2e,#16213e);border:1.5px solid #e07575;border-radius:14px;padding:14px 18px;margin-bottom:16px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.principle-banner::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(224,117,117,.08),rgba(255,160,80,.05));pointer-events:none}
+.principle-banner:hover{border-color:#ff6b6b;box-shadow:0 0 20px rgba(224,117,117,.3);transform:translateY(-1px)}
+.principle-banner-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.principle-banner-title{font-size:13px;font-weight:800;color:#ff8080;letter-spacing:1px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.principle-banner-hint{font-size:11px;color:#8eaaca;font-weight:400}
+.principle-chips{display:flex;gap:6px;flex-wrap:wrap}
+.principle-chip{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.pc-red{background:rgba(224,117,117,.2);color:#ff8080;border:1px solid rgba(224,117,117,.4)}
+.pc-orange{background:rgba(255,160,60,.15);color:#ffa040;border:1px solid rgba(255,160,60,.3)}
+.pc-yellow{background:rgba(255,210,60,.12);color:#ffd040;border:1px solid rgba(255,210,60,.25)}
+/* 절대원칙 Modal */
+.principle-modal-content{max-width:900px}
+.principle-body{padding:0;overflow-y:auto;max-height:80vh}
+.pr-sections{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:700px){.pr-sections{grid-template-columns:1fr}}
+.pr-section{padding:20px 22px;border-bottom:1px solid rgba(255,255,255,.06)}
+.pr-section-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.pr-rule{display:flex;gap:10px;margin-bottom:10px;align-items:flex-start;font-size:13px;line-height:1.6}
+.pr-num{font-size:12px;font-weight:800;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.pr-sub{margin-top:5px;display:flex;flex-direction:column;gap:3px}
+.pr-sub-item{font-size:12px;color:#94a3b8;display:flex;gap:6px;padding-left:4px}
+.pr-highlight{background:rgba(255,100,100,.18);border-left:3px solid #ff6464;border-radius:0 6px 6px 0;padding:6px 10px;margin-bottom:8px;font-size:13px;color:#ffaaaa;font-weight:600;line-height:1.6}
+.pr-pillars{display:flex;gap:12px;justify-content:center;padding:20px;background:rgba(0,0,0,.15);border-top:1px solid rgba(255,255,255,.06)}
+.pr-pillar{text-align:center;flex:1}
+.pr-pillar-num{font-size:11px;color:#8eaaca;margin-bottom:4px}
+.pr-pillar-text{font-size:18px;font-weight:900;color:#e2e8f0;letter-spacing:1px}
+/* 섹션별 테마 */
+.pr-s1{background:linear-gradient(160deg,#1a1a2e,#1e2240)}
+.pr-s2{background:linear-gradient(160deg,#1e1a2e,#241e2e)}
+.pr-s3{background:linear-gradient(160deg,#1a2218,#1e2820)}
+.pr-s4{background:linear-gradient(160deg,#2e1a1a,#2e2018);grid-column:1/-1}
 </style>
 </head>
 <body>
@@ -308,6 +341,18 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
         <button class="btn-secondary" onclick="openUploadModal()">📱 거래내역 업로드</button>
         <button class="btn-secondary" onclick="openHope()">🚀 희망회로</button>
         <button class="btn-secondary" onclick="openWeekly()">📅 주별 성과</button>
+      </div>
+    </div>
+    <div class="principle-banner" onclick="openPrinciple()">
+      <div class="principle-banner-top">
+        <div class="principle-banner-title">⚔️ 절대 원칙</div>
+        <div class="principle-banner-hint">클릭하여 전체 원칙 보기 →</div>
+      </div>
+      <div class="principle-chips">
+        <span class="principle-chip pc-red">① 비중 1%</span>
+        <span class="principle-chip pc-red">② 22:30~02:00</span>
+        <span class="principle-chip pc-orange">③ 주목표 완수 시 매매 금지</span>
+        <span class="principle-chip pc-yellow">④ 주 수익 50% 인출</span>
       </div>
     </div>
     <div id="overview-content"></div>
@@ -368,6 +413,7 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
       <div id="detail-pos-header"></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn-warn" id="ungroup-btn" onclick="ungroupCurrent()" style="display:none">그룹 해제</button>
+        <button class="btn-danger" id="delete-pos-btn" onclick="deleteCurrentPosition()">🗑 삭제</button>
         <button class="btn-close" onclick="closeDetail()">✕</button>
       </div>
     </div>
@@ -419,6 +465,7 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
       </div>
       <img id="trade-img-preview" alt="미리보기">
       <div class="ocr-fill-hint" id="ocr-fill-hint">AI 분석 완료 — 아래 내용을 확인하고 필요시 수정 후 저장하세요.</div>
+      <div id="dup-warn" style="display:none;background:#fff8e5;border:1px solid #f5dda0;border-radius:9px;padding:10px 14px;font-size:12px;color:#b07820;line-height:1.7"></div>
       <!-- 수동 입력 폼 -->
       <div class="manual-form" id="manual-form">
         <div class="manual-form-grid">
@@ -526,6 +573,155 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
       <div class="settings-actions">
         <button class="btn-secondary" onclick="closeSettings()">취소</button>
         <button class="btn-primary" onclick="saveSettingsAndReload()">저장 후 재시작</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 절대원칙 Modal -->
+<div id="principle-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closePrinciple()">
+  <div class="modal-content principle-modal-content" style="background:#0f1629;border-color:#2a3a5a">
+    <div class="modal-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);border-bottom-color:#2a3a5a">
+      <div>
+        <h2 style="color:#ff8080;font-size:18px;letter-spacing:1px">⚔️ 절대 원칙 V1</h2>
+        <div style="font-size:11px;color:#5a7a9a;margin-top:2px">2026.06.09 — 어기면 망한다</div>
+      </div>
+      <button class="btn-close" onclick="closePrinciple()" style="background:#1e2a40;border-color:#2a3a5a;color:#8eaaca">✕</button>
+    </div>
+    <div class="principle-body">
+      <div class="pr-sections">
+
+        <!-- 절대 원칙 -->
+        <div class="pr-section pr-s1" style="border-right:1px solid rgba(255,255,255,.06)">
+          <div class="pr-section-title" style="color:#ff8080">🔴 절대 원칙</div>
+          <div class="pr-highlight">이 4가지를 어기는 순간 계좌는 무너진다</div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(255,80,80,.3);color:#ff8080">1</div>
+            <div style="color:#e2e8f0"><strong style="color:#ff6060;font-size:15px">비중 관리 1%</strong><br><span style="color:#8eaaca;font-size:12px">한 포지션에 전체 자금의 1%만 리스크</span></div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(255,80,80,.3);color:#ff8080">2</div>
+            <div style="color:#e2e8f0"><strong style="color:#ff6060;font-size:15px">매매 시간 엄수</strong><br><span style="color:#ffa040;font-size:14px;font-weight:700">22:30 ~ 02:00</span><br><span style="color:#8eaaca;font-size:12px">그 외 시간대 진입 절대 금지</span></div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(255,80,80,.3);color:#ff8080">3</div>
+            <div style="color:#e2e8f0"><strong style="color:#ff6060">일주일 목표 완수 시 매매 금지</strong><br><span style="color:#8eaaca;font-size:12px">목표 달성 = 그 주는 끝. 더 욕심내지 않는다</span></div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(255,80,80,.3);color:#ff8080">4</div>
+            <div style="color:#e2e8f0"><strong style="color:#ff6060">주 수익의 50% 인출</strong><br><span style="color:#8eaaca;font-size:12px">매주 월요일 아침, 지난주 수익 절반 인출</span></div>
+          </div>
+        </div>
+
+        <!-- 진입 전 필수 체크 -->
+        <div class="pr-section pr-s2">
+          <div class="pr-section-title" style="color:#c084fc">📋 진입 전 필수 체크</div>
+          <div class="pr-highlight" style="background:rgba(192,132,252,.15);border-color:#c084fc;color:#d8b4fe">⛔ 더블비 + 캔들 기준 없으면 진입 금지</div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(192,132,252,.25);color:#c084fc">1</div>
+            <div style="color:#e2e8f0">더블비 · 캔들 · 이평선 · 지지저항 · 추세선 · 이격도 · <strong style="color:#d8b4fe">시가 돌파 여부</strong> 확인</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(192,132,252,.25);color:#c084fc">2</div>
+            <div style="color:#e2e8f0"><strong style="color:#d8b4fe">손절 10% 라인</strong> 먼저 정한다</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(192,132,252,.25);color:#c084fc">3</div>
+            <div style="color:#e2e8f0">익절 라인 잡아두기</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(192,132,252,.25);color:#c084fc">4</div>
+            <div style="color:#e2e8f0">손절라인 vs 익절라인 → <strong style="color:#d8b4fe">손익비 확인</strong></div>
+          </div>
+        </div>
+
+        <!-- 아침 매매법 -->
+        <div class="pr-section pr-s3" style="border-right:1px solid rgba(255,255,255,.06)">
+          <div class="pr-section-title" style="color:#4ade80">🌅 아침(아시아장) 매매법</div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(74,222,128,.2);color:#4ade80">1</div>
+            <div style="color:#e2e8f0"><strong style="color:#86efac">전일 미장</strong> 고점/저점 파악 후 추세매매</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(74,222,128,.2);color:#4ade80">2</div>
+            <div style="color:#e2e8f0">📈 상방이면 → <strong style="color:#86efac">볼린저 하단</strong>에서 매수</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(74,222,128,.2);color:#4ade80">3</div>
+            <div style="color:#e2e8f0">📉 하방이면 → <strong style="color:#86efac">볼린저 상단</strong>에서 매도</div>
+          </div>
+          <div class="pr-rule">
+            <div class="pr-num" style="background:rgba(74,222,128,.2);color:#4ade80">4</div>
+            <div style="color:#e2e8f0">미장 힘이 비등 → <strong style="color:#86efac">더블비에서만</strong> 진입</div>
+          </div>
+        </div>
+
+        <!-- 3가지 마음가짐 (우상단) -->
+        <div class="pr-section" style="background:linear-gradient(160deg,#1a1e2e,#1e2235);display:flex;flex-direction:column;justify-content:center">
+          <div class="pr-section-title" style="color:#fbbf24;justify-content:center">✨ 3가지 마음가짐</div>
+          <div style="display:flex;gap:16px;justify-content:center;margin-top:4px">
+            <div style="text-align:center">
+              <div style="font-size:10px;color:#8eaaca;margin-bottom:4px">첫째</div>
+              <div style="font-size:22px;font-weight:900;color:#fbbf24;letter-spacing:1px">꾸준함</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:10px;color:#8eaaca;margin-bottom:4px">둘째</div>
+              <div style="font-size:22px;font-weight:900;color:#fbbf24;letter-spacing:1px">절제</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:10px;color:#8eaaca;margin-bottom:4px">셋째</div>
+              <div style="font-size:22px;font-weight:900;color:#fbbf24;letter-spacing:1px">통계인간</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 10억 트레이더 (전체 너비) -->
+        <div class="pr-section pr-s4">
+          <div class="pr-section-title" style="color:#fb923c">💰 10억 트레이더 마인드셋</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+            <div>
+              <div style="font-size:11px;color:#fb923c;font-weight:700;margin-bottom:7px">① 하지 말아야 할 것</div>
+              <div class="pr-sub">
+                <div class="pr-sub-item"><span style="color:#fb923c">✗</span> 돌파 캔들 따라잡기</div>
+                <div class="pr-sub-item"><span style="color:#fb923c">✗</span> 나스닥 오버나잇 홀딩</div>
+                <div class="pr-sub-item"><span style="color:#fb923c">✗</span> 근거 없이 느낌으로 진입</div>
+                <div class="pr-sub-item"><span style="color:#fb923c">✗</span> 분석해놓고 포지션 계속 변경</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#fb923c;font-weight:700;margin-bottom:7px">② 손절 마인드</div>
+              <div class="pr-sub">
+                <div class="pr-sub-item"><span style="color:#4ade80">✓</span> 하루 손실 최대 금액 정해두기</div>
+                <div class="pr-sub-item"><span style="color:#4ade80">✓</span> 최대 손실 시 그날 매매 금지</div>
+              </div>
+              <div style="font-size:11px;color:#fb923c;font-weight:700;margin-top:10px;margin-bottom:7px">④ 입출금 전략</div>
+              <div class="pr-sub">
+                <div class="pr-sub-item"><span style="color:#4ade80">✓</span> 매일 수익금 출금</div>
+                <div class="pr-sub-item"><span style="color:#4ade80">✓</span> 손실 시 손실금액의 50% 입금</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#ff8080;font-weight:700;margin-bottom:7px">③ 손실이 클 때 — <span style="color:#ffaaaa">절대 복구하려 하지 말 것</span></div>
+              <div class="pr-sub">
+                <div class="pr-sub-item" style="color:#ffaaaa"><span style="color:#ff8080">→</span> <strong>손실을 복구하려고 하지 않는다</strong></div>
+                <div class="pr-sub-item"><span style="color:#8eaaca">→</span> 받아들이고 0으로 시작해라</div>
+                <div class="pr-sub-item"><span style="color:#8eaaca">→</span> 해봤으니 또 할 수 있다 생각해라</div>
+                <div class="pr-sub-item"><span style="color:#8eaaca">→</span> 더 큰 손실을 미리 막았다고 생각해라</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#fb923c;font-weight:700;margin-bottom:7px">⑤ 5가지 생각 탑재</div>
+              <div class="pr-sub">
+                <div class="pr-sub-item"><span style="color:#fbbf24">★</span> 이 시장은 마켓메이커가 지배 중</div>
+                <div class="pr-sub-item"><span style="color:#fbbf24">★</span> MM은 우리 호가·거래내역을 볼 수 있음</div>
+                <div class="pr-sub-item" style="color:#fbbf24"><span>★</span> <strong>이길 수밖에 없는 자리에서만 들어간다</strong></div>
+                <div class="pr-sub-item"><span style="color:#fbbf24">★</span> 개미들과 반대로 움직이면 번다</div>
+                <div class="pr-sub-item"><span style="color:#fbbf24">★</span> 뉴스에 흔들리지 않는다. 차트만 본다.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1110,6 +1306,16 @@ function renderOverview() {
     document.getElementById('deposit-list').innerHTML=dHtml;
 }
 
+// ── 절대원칙 ────────────────────────────────────────────────────
+function openPrinciple() {
+    document.getElementById('principle-modal').style.display='flex';
+    document.body.style.overflow='hidden';
+}
+function closePrinciple() {
+    document.getElementById('principle-modal').style.display='none';
+    document.body.style.overflow='';
+}
+
 // ── Loss Memo ─────────────────────────────────────────────────
 let currentLossId=null;
 function openLossMemo(rank) {
@@ -1359,6 +1565,63 @@ function closeDetail() {
     document.body.style.overflow='';
     currentNoteId=null; renderList();
 }
+async function deleteCurrentPosition() {
+    if(!currentNoteId) return;
+    const id=currentNoteId, isGroup=currentIsGroup;
+    let confirmMsg;
+    if(isGroup) {
+        const g=groupCache.find(g=>g.id===id);
+        const cnt=g?g.posIds.length:0;
+        confirmMsg=`이 그룹(${cnt}개 묶음)을 삭제하시겠습니까?\n개별 거래도 모두 삭제됩니다. 복구 불가능합니다.`;
+    } else {
+        const pos=POSITIONS.find(p=>p.id===id);
+        const src=pos&&pos.source==='excel'?'\n⚠️ 엑셀 원본 데이터입니다. 다음 generate_html.py 실행 시 복구됩니다.':'';
+        confirmMsg=`포지션 #${id}을 삭제하시겠습니까?\n복구하려면 generate_html.py를 재실행하세요.${src}`;
+    }
+    if(!confirm(confirmMsg)) return;
+
+    showLoading(true);
+    try {
+        if(isGroup) {
+            const g=groupCache.find(g=>g.id===id);
+            const allIds=g?[id,...g.posIds]:[id];
+            if(sb) {
+                for(const pid of allIds) {
+                    await sb.from('annotations').delete().eq('position_id',pid);
+                }
+                await sb.from('pos_groups').delete().eq('id',id);
+                // 그룹 내 개별 포지션도 삭제
+                for(const pid of (g?g.posIds:[])) {
+                    await sb.from('positions').delete().eq('id',pid);
+                    POSITIONS = POSITIONS.filter(p=>p.id!==pid);
+                    delete noteCache[pid]; delete chartCache[pid];
+                }
+            }
+            groupCache=groupCache.filter(g=>g.id!==id);
+            delete noteCache[id]; delete chartCache[id];
+        } else {
+            if(sb) {
+                await sb.from('annotations').delete().eq('position_id',id);
+                const {error}=await sb.from('positions').delete().eq('id',id);
+                if(error) { showToast('삭제 실패: '+error.message); return; }
+            }
+            const pos=POSITIONS.find(p=>p.id===id);
+            if(pos&&pos.source==='mobile') {
+                CURRENT_BALANCE=+(CURRENT_BALANCE-pos.profit-pos.commission-pos.swap).toFixed(2);
+                if(sb) await sb.from('app_settings').upsert({key:'current_balance',value:CURRENT_BALANCE},{onConflict:'key'});
+            }
+            POSITIONS=POSITIONS.filter(p=>p.id!==id);
+            delete noteCache[id]; delete chartCache[id];
+        }
+        document.getElementById('detail-modal').style.display='none';
+        document.body.style.overflow='';
+        currentNoteId=null;
+        showToast('삭제되었습니다');
+        renderList(); renderCalendar(); renderOverview();
+    } finally {
+        showLoading(false);
+    }
+}
 async function saveDetail() {
     if(!currentNoteId) return;
     const data={
@@ -1483,6 +1746,31 @@ function fillManualForm(d) {
     document.getElementById('mf-profit').value      = d.profit      || '';
     document.getElementById('mf-commission').value  = d.commission  || 0;
     document.getElementById('mf-swap').value        = d.swap        || 0;
+    checkDupeRealtime();
+}
+function checkDupeRealtime() {
+    const symbol  = document.getElementById('mf-symbol').value.trim();
+    const dir     = document.getElementById('mf-direction').value;
+    const profit  = parseFloat(document.getElementById('mf-profit').value) || null;
+    const comm    = parseFloat(document.getElementById('mf-commission').value) || null;
+    const ct      = document.getElementById('mf-close-time').value.trim();
+    const warn    = document.getElementById('dup-warn');
+    if(!symbol||profit===null||comm===null||!ct) { warn.style.display='none'; return; }
+    const closeDate = add6hJS(ct).slice(0,10);
+    const symN = symName(symbol);
+    const dupes = POSITIONS.filter(p=>
+        p.symbolName===symN && p.direction===dir &&
+        Math.abs(p.profit-profit)<0.02 && Math.abs(p.commission-comm)<0.02 &&
+        p.closeTime && p.closeTime.slice(0,10)===closeDate
+    );
+    if(dupes.length>0) {
+        const d=dupes[0];
+        warn.style.display='block';
+        warn.innerHTML='⚠️ <strong>중복 가능성 감지!</strong> 동일 날짜·종목·손익의 거래가 이미 있어요.<br>'+
+            '기존 ID: <strong>'+d.id+'</strong> ('+d.source+')  profit='+d.profit+'  comm='+d.commission;
+    } else {
+        warn.style.display='none';
+    }
 }
 function setupTradeUploadInput() {
     document.getElementById('trade-upload-input').addEventListener('change', function(e) {
@@ -1500,6 +1788,12 @@ function setupTradeUploadInput() {
             pendingTradeData=null;
         };
         reader.readAsDataURL(file);
+    });
+    // 실시간 중복 감지: 손익·수수료·청산시간·종목·방향 변경 시
+    ['mf-profit','mf-commission','mf-close-time','mf-symbol','mf-direction'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el) el.addEventListener('input',checkDupeRealtime);
+        if(el) el.addEventListener('change',checkDupeRealtime);
     });
 }
 async function analyzeTradeImage() {
@@ -1581,6 +1875,22 @@ async function confirmTrade() {
     }
     if(POSITIONS.find(p=>p.id===posId)) {
         showToast('이미 존재하는 포지션입니다 (#'+posId+')'); return;
+    }
+    // 중복 감지: 같은 날짜·종목·방향·손익·수수료인 엑셀 포지션 검색
+    const closeDate=closeTime.slice(0,10);
+    const symN=symName(symbol);
+    const dupes=POSITIONS.filter(p=>
+        p.symbolName===symN && p.direction===direction &&
+        Math.abs(p.profit-profit)<0.02 && Math.abs(p.commission-commission)<0.02 &&
+        p.closeTime && p.closeTime.slice(0,10)===closeDate
+    );
+    if(dupes.length>0) {
+        const d=dupes[0];
+        const msg=`⚠️ 중복 가능성이 있는 거래가 이미 존재합니다!\n\n`+
+            `기존: ID=${d.id} (${d.source})  profit=${d.profit}  comm=${d.commission}\n`+
+            `입력: ID=${posId}  profit=${profit}  comm=${commission}\n\n`+
+            `그래도 저장하시겠습니까?`;
+        if(!confirm(msg)) return;
     }
     const newRow={
         id: posId, open_time: openTime, close_time: closeTime,
