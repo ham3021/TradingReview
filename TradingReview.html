@@ -30,6 +30,8 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
 .overview-header-btns{display:flex;gap:8px;flex-wrap:wrap}
 .overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
 .stat-card{background:linear-gradient(135deg,#f4f8ff,#eaf0fb);border:1px solid #cfddf5;border-radius:12px;padding:14px 16px}
+.stat-card.clickable{cursor:pointer;transition:transform .15s,box-shadow .15s}
+.stat-card.clickable:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(91,142,220,.25)}
 .stat-label{font-size:11px;color:#7a96b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;font-weight:600}
 .stat-value{font-size:18px;font-weight:700;color:#1e3050}
 .stat-value .muted{font-size:12px;font-weight:400;color:#8eaaca}
@@ -525,6 +527,14 @@ h2{font-size:16px;font-weight:600;color:#2c4268}
         <button class="btn-secondary" onclick="closeUploadModal()">취소</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Withdrawal History Modal -->
+<div id="withdrawal-modal" class="modal-overlay" style="display:none">
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header"><h2>💸 출금 내역</h2><button class="btn-close" onclick="closeWithdrawalHistory()">✕</button></div>
+    <div id="withdrawal-history-content" style="padding:20px;overflow-y:auto;max-height:60vh"></div>
   </div>
 </div>
 
@@ -1025,8 +1035,8 @@ function add6hJS(timeStr) {
                String(d.getSeconds()).padStart(2,'0');
     } catch(e) { return timeStr; }
 }
-function stat(label,val,cls,sub) {
-    return '<div class="stat-card">'+
+function stat(label,val,cls,sub,onclick) {
+    return '<div class="stat-card'+(onclick?' clickable':'')+'"'+(onclick?' onclick="'+onclick+'"':'')+'>'+
         '<div class="stat-label">'+label+'</div>'+
         '<div class="stat-value '+(cls||'')+'">'+val+'</div>'+
         (sub ? '<div class="stat-krw">'+sub+'</div>' : '')+
@@ -1166,8 +1176,12 @@ function getBalanceAt(timeStr) {
     if(bal !== null) return bal;
     return PERIOD_START_BALANCE || INITIAL_BALANCE;
 }
+function localDateStr() {
+    const n=new Date();
+    return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
 function getMondayKey(dateStr) {
-    const [y,mo,dy] = (dateStr||new Date().toISOString().split('T')[0]).split('-').map(Number);
+    const [y,mo,dy] = (dateStr||localDateStr()).split('-').map(Number);
     const d = new Date(y, mo-1, dy);
     const dow = d.getDay();
     const diff = dow === 0 ? -6 : 1 - dow;
@@ -1191,8 +1205,7 @@ function calcWeekly() {
     });
 }
 async function checkAndSetWeeklyTarget() {
-    const todayStr=new Date().toISOString().split('T')[0];
-    const monKey=getMondayKey(todayStr);
+    const monKey=getMondayKey(localDateStr());
     if(WEEKLY_TARGETS[monKey]) return; // already locked for this week
     const targetAmt=+(CURRENT_BALANCE*WEEKLY_TARGET_PCT).toFixed(2);
     WEEKLY_TARGETS[monKey]={balance:CURRENT_BALANCE, target:targetAmt, set_at:new Date().toISOString()};
@@ -1231,23 +1244,21 @@ function renderOverview() {
     const tradingProfit=+POSITIONS.reduce((s,p)=>s+p.profit+p.commission+p.swap,0).toFixed(2);
     const roi=netCapital>0?(tradingProfit/netCapital*100):0;
 
-    const todayStr=new Date().toISOString().split('T')[0];
+    const _tn=new Date();
+    const todayStr=_tn.getFullYear()+'-'+String(_tn.getMonth()+1).padStart(2,'0')+'-'+String(_tn.getDate()).padStart(2,'0');
     const monKey=getMondayKey(todayStr);
     const storedTarget=WEEKLY_TARGETS[monKey];
     const wTargetBase=storedTarget?storedTarget.balance:CURRENT_BALANCE;
     const wTarget=storedTarget?storedTarget.target:+(CURRENT_BALANCE*WEEKLY_TARGET_PCT).toFixed(2);
 
     const weeks=calcWeekly();
-    const cw=weeks.find(w=>w.key===monKey)||weeks[weeks.length-1];
+    const cw=weeks.find(w=>w.key===monKey);
     const wPnl=cw?cw.pnl:0;
 
-    const completedWeeks=weeks.filter(w=>{const sun=addDaysToKey(w.key,6);return sun<todayStr;});
-    const lastWeek=completedWeeks.length?completedWeeks[completedWeeks.length-1]:null;
-    const lastWeekPnl=lastWeek?lastWeek.pnl:0;
-    const withdrawAmt=+(lastWeekPnl*0.5).toFixed(2);
-    const withdrawHtml=lastWeekPnl>0
-        ?'$'+withdrawAmt.toFixed(2)+'<br><span class="withdraw-guide-sub">지난주 $'+lastWeekPnl.toFixed(2)+' × 50%</span>'
-        :'<span class="muted">지난주 수익 없음</span>';
+    const thisWeekWithdraw=+(wPnl*0.5).toFixed(2);
+    const withdrawHtml=wPnl>0
+        ?'$'+thisWeekWithdraw.toFixed(2)+'<br><span class="withdraw-guide-sub">이번주 $'+wPnl.toFixed(2)+' × 50%</span>'
+        :'<span class="muted">이번주 수익 없음</span>';
 
     const nqLot=(Math.round(CURRENT_BALANCE/1000*0.1*10)/10).toFixed(1);
     const goldLot=(Math.round(CURRENT_BALANCE/1000*0.01*100)/100).toFixed(2);
@@ -1277,13 +1288,13 @@ function renderOverview() {
         '<div class="overview-grid">'+
         stat('현재잔고','$'+CURRENT_BALANCE.toFixed(2),'',krw(CURRENT_BALANCE))+
         stat('총 입금','$'+totalDeposited.toFixed(2),'positive',krw(totalDeposited))+
-        stat('총 출금','$'+totalWithdrawn.toFixed(2),totalWithdrawn>0?'negative':'',totalWithdrawn>0?krw(totalWithdrawn):'')+
+        stat('총 출금','$'+totalWithdrawn.toFixed(2),totalWithdrawn>0?'negative':'',totalWithdrawn>0?krw(totalWithdrawn):'','openWithdrawalHistory()')+
         stat('순 매매손익',(tradingProfit>=0?'+':'')+'$'+tradingProfit.toFixed(2),tradingProfit>=0?'positive':'negative',krw(tradingProfit))+
         stat('투자시작일',formatKoreanDateOnly(START_DATE))+
         stat('총 수익률',(roi>=0?'+':'')+roi.toFixed(2)+'%',roi>=0?'positive':'negative')+
         stat('이번주 목표','$'+wTarget.toFixed(2)+'<span class="muted"> (4%)</span><br><span class="muted" style="font-size:10px">기준잔고 $'+wTargetBase.toFixed(2)+'</span>','',krw(wTarget))+
         stat('이번주 손익',fmtPnl(wPnl)+(wPnl>=wTarget?' ✓':' ✗')+'<br><span class="muted" style="font-size:12px">'+(wTarget>0?(wPnl/wTarget*100).toFixed(1):0)+'% 달성</span>',wPnl>=0?'positive':'negative',krw(Math.abs(wPnl)))+
-        stat('주1회 출금 기준',withdrawHtml,lastWeekPnl>0?'positive':'')+
+        stat('이번주 출금액 예상',withdrawHtml,wPnl>0?'positive':'')+
         '</div>'+
         lossHtml+
         '<div class="lot-section">'+
@@ -1923,24 +1934,69 @@ async function confirmTrade() {
     renderList(); renderCalendar(); renderOverview();
 }
 
+// ── Withdrawal History Modal ───────────────────────────────────
+function openWithdrawalHistory() {
+    const withdrawals=DEPOSITS.filter(d=>d.amount<0).slice().sort((a,b)=>b.time.localeCompare(a.time));
+    let html='';
+    if(withdrawals.length===0){
+        html='<div style="color:#8eaaca;text-align:center;padding:32px">출금 내역이 없습니다</div>';
+    } else {
+        html='<table style="width:100%;border-collapse:collapse;font-size:14px">';
+        html+='<thead><tr style="background:#f0f5fc"><th style="padding:10px 14px;text-align:left;color:#7a96b8;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #d8e6f8">날짜</th><th style="padding:10px 14px;text-align:right;color:#7a96b8;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:2px solid #d8e6f8">금액</th></tr></thead><tbody>';
+        let total=0;
+        for(const d of withdrawals){
+            const [yy,mm,dd]=d.time.slice(0,10).split('-');
+            const label=mm+'월 '+dd+'일 ('+yy+')';
+            total+=d.amount;
+            html+='<tr style="border-bottom:1px solid #e8f0f8">'+
+                '<td style="padding:11px 14px;color:#1e3050">'+label+(d.comment?'<div style="font-size:11px;color:#8eaaca;margin-top:2px">'+escHtml(d.comment)+'</div>':'')+'</td>'+
+                '<td style="padding:11px 14px;text-align:right;font-weight:700;color:#d9604e">'+d.amount.toFixed(2)+(KRW_RATE?'<div style="font-size:11px;color:#5b8edc">'+krw(Math.abs(d.amount))+'</div>':'')+'</td>'+
+                '</tr>';
+        }
+        html+='</tbody><tfoot><tr style="background:#f8fbff"><td style="padding:11px 14px;font-weight:700;color:#1e3050">합계</td>'+
+            '<td style="padding:11px 14px;text-align:right;font-weight:700;color:#d9604e">'+total.toFixed(2)+(KRW_RATE?'<div style="font-size:11px;color:#5b8edc">'+krw(Math.abs(total))+'</div>':'')+'</td></tr></tfoot></table>';
+    }
+    document.getElementById('withdrawal-history-content').innerHTML=html;
+    document.getElementById('withdrawal-modal').style.display='flex';
+    document.body.style.overflow='hidden';
+}
+function closeWithdrawalHistory(){document.getElementById('withdrawal-modal').style.display='none';document.body.style.overflow='';}
+
 // ── Weekly Modal ──────────────────────────────────────────────
+function weekWithdrawDone(week) {
+    if(week.pnl<=0) return null;
+    const target=+(week.pnl*0.5).toFixed(2);
+    const deadline=addDaysToKey(week.key,13);
+    const totalW=Math.abs(DEPOSITS
+        .filter(d=>d.amount<0&&d.time.slice(0,10)>=week.key&&d.time.slice(0,10)<=deadline)
+        .reduce((s,d)=>s+d.amount,0));
+    return totalW>=target*0.8;
+}
 function openWeekly() {
-    const weeks=calcWeekly(); let rows='',metCnt=0,totalPnl=0;
-    weeks.forEach((w,i)=>{
+    const weeks=calcWeekly();
+    const _tn=new Date();
+    const todayStr=_tn.getFullYear()+'-'+String(_tn.getMonth()+1).padStart(2,'0')+'-'+String(_tn.getDate()).padStart(2,'0');
+    let rows='',metCnt=0,totalPnl=0;
+    [...weeks].reverse().forEach((w,ri)=>{
+        const weekNum=weeks.length-ri;
         if(w.met) metCnt++; totalPnl+=w.pnl;
         const wr=w.count>0?Math.round(w.wins/w.count*100):0;
+        const isCompleted=addDaysToKey(w.key,6)<todayStr;
+        const wdone=isCompleted?weekWithdrawDone(w):null;
+        const wdoneHtml=wdone===null?'<span class="muted">-</span>':(wdone?'<span class="met-yes">✓</span>':'<span class="met-no">✗</span>');
         rows+='<tr class="'+(w.met?'week-row-met':'week-row-fail')+'">'+
-            '<td><strong>'+(i+1)+'주차</strong></td>'+
+            '<td><strong>'+weekNum+'주차</strong></td>'+
             '<td>'+weekLabel(w.key)+'</td>'+
             '<td>$'+w.startBalance.toFixed(2)+(KRW_RATE?'<br><span class="hope-krw">'+krw(w.startBalance)+'</span>':'')+'</td>'+
             '<td>$'+w.target.toFixed(2)+(KRW_RATE?'<br><span class="hope-krw">'+krw(w.target)+'</span>':'')+'</td>'+
             '<td class="'+(w.pnl>=0?'positive':'negative')+'"><strong>'+fmtPnl(w.pnl)+'</strong>'+(KRW_RATE?'<br><span class="hope-krw">'+krw(Math.abs(w.pnl))+'</span>':'')+'</td>'+
             '<td>'+w.count+'건 (승'+wr+'%)</td>'+
-            '<td class="'+(w.met?'met-yes':'met-no')+'">'+(w.met?'✓':'✗')+'</td></tr>';
+            '<td class="'+(w.met?'met-yes':'met-no')+'">'+(w.met?'✓':'✗')+'</td>'+
+            '<td style="text-align:center">'+wdoneHtml+'</td></tr>';
     });
     document.getElementById('weekly-content').innerHTML=
         '<div class="weekly-body"><table class="weekly-table"><thead><tr>'+
-        '<th>주차</th><th>기간</th><th>시작잔고</th><th>목표(4%)</th><th>실현손익</th><th>거래</th><th>달성</th>'+
+        '<th>주차</th><th>기간</th><th>시작잔고</th><th>목표(4%)</th><th>실현손익</th><th>거래</th><th>달성</th><th>출금완료</th>'+
         '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
         '<div class="weekly-summary">'+
         '<span>목표 달성 <strong class="positive">'+metCnt+'</strong>/'+weeks.length+'주</span>'+
